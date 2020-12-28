@@ -7,4 +7,5 @@ In 2018 I tried to create an extended module just for the electronic and some br
 
 In 2019 not any progress.
 
-In 2020 reading about python and data mining. Organizing my files. In 27th december 2020, created this github in order to have a clear definition about what I need to create and hope to make this useful and organized.
+In 2020 reading about python and data mining. Organizing my files. In 27th december 2020, created this github in order to have a clear definition about what I need to create and hope to make this useful and organized. In the same date also published a brief link about github location for testing purpose.
+
