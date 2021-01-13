@@ -1,4 +1,4 @@
-
+#Library import in order to make the script works propertly
 import datetime
 import paho.mqtt.client as paho
 import RPi.GPIO as GPIO
