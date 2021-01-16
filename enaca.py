@@ -1,3 +1,5 @@
+#run enaca.py as this example:
+#nohup python enaca.py >/dev/null 2>&1&
 #Library import in order to make the script works propertly
 import datetime
 import paho.mqtt.client as paho
@@ -6,12 +8,19 @@ import serial
 import sys
 import struct
 import time
+import numpy as np
+import random
+from time import sleep
+sys.path.append('./scriptsComm') #Relative path that applies to raspberry
 from topicTide import *
+
 
 #Rasperry inputs to be used as pulse counter for water flow
 GPIO.setmode (GPIO.BCM)
-GPIO.setup(22, GPIO.IN)
 GPIO.setup(18, GPIO.IN)
+GPIO.setup(23, GPIO.IN)
+GPIO.setup(24, GPIO.IN)
+GPIO.setup(25, GPIO.IN)
 
 #Variables for True and False to ensure communications
 active = 150
@@ -30,7 +39,7 @@ acumApt1 = 0
 acumApt2 = 0
 
 #Variables for MQTT server
-mqttc = paho.client()
+mqttc = paho.Client()
 host = "192.168.15.102" #Server IP can be selected as you desire
 door = []
 port = 1883 #The one that mosquitto uses
@@ -78,33 +87,30 @@ class bcolors: #To be used for displaying alarms when debugging
  BOLD = '\033[1m'
  UNDERLINE = '\033[4m'
 
-#32 bytes vector conversion to 8 floats
-#This routine was used when workin with i2c comm
-def get_float[data, index]:
- bytes = data[4.index:(index+1)*4]
- return struct.unpack('f', "".join(map(chr, bytes)))[0]
-
-#Function for connecting with MQTT server
+#Function to explore EVD structure in topicTide.py and execute massive subscription to controls topics
 def on_connect(client, userdata, flags, rc):
  print ("on_connect() " + str(rc))
  for nodeCount in range(len(nodes)):
   for zoneCount in range(len(zones)):
    for indexCount in range(len(positionsBase)):
     topicRouteSubs = nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[2]+'/'+positionsBase[indexCount]
-    print ("Subscribing to: "+ topicRouteSubs)
+    #print ("Subscribing to: "+ topicRouteSubs) #Uncomment this if you need to see what happend with each control topic before subscription
     mqttc.subscribe(topicRouteSubs)
+ print("Subscription completed for all topics in EVD structure")
 
 def on_subscribe(client, userdata, mid, granted_qos):
- print("Successful subscribed")
+ pass #Just in this case to to nothing if subscribe event is receive from the broker
+ #print("Successful subscribed") #If you need confirmation for each subscribed topic in console uncomment this line
 
-def on_message(client, userdata, msg):
+def on_message(client, userdata, msg): #This function is about on-screen events after receiving controls topics
  print("\n on_message() topic: "+msg.topic+"\n payload: "+str(msg.payload)+"\n")
  topic = msg.topic
- try:
+ try: #Firs check if topic exist
   payloadContent = int(msg.payload)
   topicsMap = topic.split('/')
   door = lookSearch(topicsMap[0], topicsMap[1], topicsMap[2], topicsMap[3])
- except:
+  controlsGroup[int(door[1])][int(door[3])] = payloadContent
+ except: #The idea is to receive control commands as a number
   print("It's not possible. Strings cannot be processed in payload. Only Numbers")
 
 #Rising events for flow sensor totalizer input #4
@@ -149,5 +155,92 @@ def counterPlus3(channel):
   totalizer = controlsGroup [1][9]
 
 #Interrupt routines to count rising edges in digital inputs
-GPIO.add_event_detect(18, GPIO.RISING, callback=counterPlus2, bouncetime=3)
-GPIO.add_event_detect(22, GPIO.RISING, callback=counterPlus3, bouncetime=3)
+GPIO.add_event_detect(18, GPIO.RISING, callback=counterPlus, bouncetime=3)
+GPIO.add_event_detect(23, GPIO.RISING, callback=counterPlus1, bouncetime=3)
+GPIO.add_event_detect(24, GPIO.RISING, callback=counterPlus2, bouncetime=3)
+GPIO.add_event_detect(25, GPIO.RISING, callback=counterPlus3, bouncetime=3)
+
+kwhrApt1 = 0.0
+lastKwhrApt1 = 0.0
+lastAmpApt1 = 0.0
+
+mqttc.on_connect = on_connect
+mqttc.on_subscribe = on_subscribe
+mqttc.on_message = on_message
+
+print("connecting to: "+host)
+mqttc.connect(host, port, 60)
+mqttc.loop_start()
+
+indicatorList = []
+statusList = []
+controsList = []
+
+for x in range(len(positionsBase)):
+ indicatorList.append(0)
+ statusList.append(0)
+ controsList.append(0)
+
+indicatorsGroup = [list(indicatorList),
+                   list(indicatorList),
+                   list(indicatorList),
+                   list(indicatorList),
+                   list(indicatorList),]
+
+statusGroup = [list(statusList),
+               list(statusList),
+               list(statusList),
+               list(statusList),
+               list(statusList)]
+
+controlsGroup = [list(controsList),
+                 list(controsList),
+                 list(controsList),
+                 list(controsList),
+                 list(controsList)]
+
+
+comArdu = serial.Serial("/dev/ttyS0", baudrate=9600)
+counter=0
+commfails = 0
+myData = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A'] #Init array of string to receive bytes struct packets
+f_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] #Init array of float values to unpack and convert to numpy array
+while True:
+ sleep(1) #Repeat every 1 second
+ try:
+  comArdu.write("A") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+  for i in range (0, 8):
+   myData[i] = comArdu.read(4)
+   f_data[i] = struct.unpack('f', myData[i]) #Unpack to float
+   tempTuple = f_data[i]
+   f_data[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
+   print(f_data[i])
+   indicatorsGroup[0][i]=f_data[i] #indicators axes that belongs to general.... testing purpose
+  print("============================")
+  counter+=1
+  indicatorsGroup[0][8]=counter
+  #time.sleep(.5) #Repeat every .5 seconds
+  for nodeCount in range(len(nodes)):
+   for zoneCount in range(len(zones)):
+    for indexCount in range(len(positionsBase)):
+     topicPath=nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[0]+'/'+positionsBase[indexCount]
+     #print(topicPath+'='+str(indicatorsGroup[zoneCount][indexCount]))  #This line is only for debugging purpose
+     mqttc.publish(topicPath, str(indicatorsGroup[zoneCount][indexCount])) #Publish data loaded from sensor measurement
+     topicPath=nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[1]+'/'+positionsBase[indexCount]
+     #print(topicPath+'='+str(statusGroup[zoneCount][indexCount])) #This line is only for debugging purpose
+     mqttc.publish(topicPath, str(statusGroup[zoneCount][indexCount]*random.randint(1,15))) #Publish random numbers
+ except KeyboardInterrupt:
+  print("Good bye!!!! Test finished manually")
+  quit()
+ except:
+  print("Something wrong happended. Please trace code or ask to the author")
+  commfails+=1
+  indicatorsGroup[0][9]=commfails
+  #GPIO.cleanup()
+  continue
+  #quit()
+
+
+
+GPIO.cleanup()
+print("Done")
