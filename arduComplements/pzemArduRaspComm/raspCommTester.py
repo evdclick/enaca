@@ -26,6 +26,7 @@ while True:
    f_data[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
    print(f_data[i])
   print("============================")
+  comArdu.reset_input_buffer() #Flush input buffer
   sleep(1) #Repeat every .5 seconds
  except KeyboardInterrupt():
   quit()
