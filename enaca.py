@@ -200,26 +200,45 @@ controlsGroup = [list(controsList),
                  list(controsList)]
 
 
-comArdu = serial.Serial("/dev/ttyS0", baudrate=9600)
+comArdu = serial.Serial("/dev/ttyS0", baudrate=9600, timeout=2)
 counter=0
 commfails = 0
 myData = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A'] #Init array of string to receive bytes struct packets
 f_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] #Init array of float values to unpack and convert to numpy array
+latestNormal1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 while True:
- sleep(1) #Repeat every 1 second
+ sleep(.3) #Repeat every 1 second
  try:
+  comArdu.close()
+  sleep(.1)
+  comArdu.open()
+  sleep(.1)
   comArdu.write("A") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
   for i in range (0, 8):
    myData[i] = comArdu.read(4)
    f_data[i] = struct.unpack('f', myData[i]) #Unpack to float
    tempTuple = f_data[i]
    f_data[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
-   print(f_data[i])
-   indicatorsGroup[0][i]=f_data[i] #indicators axes that belongs to general.... testing purpose
-  print("============================")
+   if (f_data[i]<-3 or f_data[i]>10000):
+    f_data[i]=latestNormal1[i]
+   elif (f_data[i]==-3):
+    continue
+   else:
+    latestNormal1[i]=f_data[i]
+  if (f_data[1]==-3):
+   f_data[1]=0
+   f_data[2]=0
+   f_data[3]=0
+   f_data[5]=0
+   f_data[6]=0
+   f_data[4]=latestNormal1[4]
+  for j in range (0,8):
+   indicatorsGroup[0][j]=f_data[j] #indicators axes that belongs to general.... testing purpose
+#  print("============================")
   counter+=1
+  comArdu.reset_input_buffer()
+  comArdu.reset_output_buffer()
   indicatorsGroup[0][8]=counter
-  #time.sleep(.5) #Repeat every .5 seconds
   for nodeCount in range(len(nodes)):
    for zoneCount in range(len(zones)):
     for indexCount in range(len(positionsBase)):
@@ -231,14 +250,13 @@ while True:
      mqttc.publish(topicPath, str(statusGroup[zoneCount][indexCount]*random.randint(1,15))) #Publish random numbers
  except KeyboardInterrupt:
   print("Good bye!!!! Test finished manually")
+  GPIO.cleanup()
   quit()
  except:
-  print("Something wrong happended. Please trace code or ask to the author")
   commfails+=1
   indicatorsGroup[0][9]=commfails
-  #GPIO.cleanup()
+  print("Something wrong happended. Please trace code or ask to the author")
   continue
-  #quit()
 
 
 
