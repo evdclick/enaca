@@ -17,8 +17,8 @@ float frameApt2[FLOATS_SENT]; //Data frame that belongs to energy monitoring fro
 PZEM004Tv30 pzemHouse(&Serial3, 0x42); //PZEM module for house
 PZEM004Tv30 pzemApto1(&Serial3, 0x43); //PZEM module for aparment 1
 PZEM004Tv30 pzemApto2(&Serial3, 0x44); //PZEM module for aparment 2
-
-
+char raspCommand;
+bool charComplete = false;
 void setup() {
   Serial.begin(115200); //This is the speed for serial monitoring
   Serial2.begin(9600);  //Speed for serial comm with raspberry pi through TTL leveler
@@ -36,21 +36,30 @@ void loop() {
 
   //Leer en primer módulo todos los datos de energía
   pzemGetter(frameHouse, pzemHouse);
-  Serial.println(frameHouse[1]);
-  Serial.println(frameHouse[2]);
-  Serial.println(frameHouse[3]);
-  Serial.println(frameHouse[4]);
-  Serial.println(frameHouse[5]);
-  Serial.println(frameHouse[6]);
-  Serial.println(frameHouse[7]);
-
-  if (Serial2.available() > 0) {
-    if (Serial2.read() == 'A') { //'A' is the key code that device waits in order to transmit specific energy data from house
-      Serial2.write((byte*) &frameHouse,
-                    FLOATS_SENT * sizeof(float));
+  /*  Serial.println(frameHouse[1]);
+    Serial.println(frameHouse[2]);
+    Serial.println(frameHouse[3]);
+    Serial.println(frameHouse[4]);
+    Serial.println(frameHouse[5]);
+    Serial.println(frameHouse[6]);
+    Serial.println(frameHouse[7]);
+  */
+  if (charComplete == true) {
+    //    Serial.println(inputString);
+    if (raspCommand == 'A') { //'A' is the key code that device waits in order to transmit specific energy data from house
+      Serial2.write((byte*) &frameHouse, FLOATS_SENT * sizeof(float));
     }
+    raspCommand = 'B';
+    //inputString = "";
+    charComplete = false;
   }
   delay(300);
+}
+
+void serialEvent2() {
+  raspCommand = (char)Serial2.read();
+  Serial.println(raspCommand);
+  charComplete = true;
 }
 
 //Function definition to get data from energy modules pzem004t installed in the same bus. Code efficiency
