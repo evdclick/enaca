@@ -10,7 +10,7 @@ import numpy as np
 
 
 
-comArdu = serial.Serial("/dev/ttyS0", 9600, timeout=1) #Serial port UART in raspberry
+comArdu = serial.Serial("/dev/ttyUSB0", 9600, timeout=1) #Serial port USB to TTL serial converter
 
 myData = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A'] #Init array of string to receive bytes struct packets
 f_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] #Init array of float values to unpack and convert to numpy array

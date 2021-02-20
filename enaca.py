@@ -14,7 +14,6 @@ from time import sleep
 sys.path.append('./scriptsComm') #Relative path that applies to raspberry
 from topicTide import *
 
-
 #Rasperry inputs to be used as pulse counter for water flow
 GPIO.setmode (GPIO.BCM)
 GPIO.setup(18, GPIO.IN)
@@ -200,40 +199,51 @@ controlsGroup = [list(controsList),
                  list(controsList)]
 
 
-comArdu = serial.Serial("/dev/ttyS0", baudrate=9600, timeout=2)
+comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=2)
 counter=0
 commfails = 0
+wrongData = 0
 myData = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A'] #Init array of string to receive bytes struct packets
 f_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] #Init array of float values to unpack and convert to numpy array
-latestNormal1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+latestNormal1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+energyModuleData1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+latestNormal2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+energyModuleData2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+#Function to upgrade energy module information or some other array of 8 float elements
+def comPzemCycler(ofversion, bkpversion, readCommand):
+ comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+ for i in range (0, 8):
+  myData[i] = comArdu.read(4)
+  ofversion[i] = struct.unpack('f', myData[i]) #Unpack to float
+  tempTuple = ofversion[i]
+  ofversion[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
+  if (ofversion[i]<-3 or ofversion[i]>10000): #Just to check if the number is extremely out of range
+   ofversion[i]=bkpversion[i]
+  elif (f_data[i]==-3):
+   continue
+  else:
+   bkpversion[i]=ofversion[i]
+ if (ofversion[1]==-3):
+  ofversion[1]=0
+  ofversion[2]=0
+  ofversion[3]=0
+  ofversion[5]=0
+  ofversion[6]=0
+  ofversion[4]=bkpversion[4]
+ return(ofversion, bkpversion, readCommand)
+
+#Here the loop start
 while True:
- sleep(.3) #Repeat every 1 second
+ sleep(.1) #Repeat every 1 second
  try:
-  comArdu.close()
   sleep(.1)
-  comArdu.open()
-  sleep(.1)
-  comArdu.write("A") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
-  for i in range (0, 8):
-   myData[i] = comArdu.read(4)
-   f_data[i] = struct.unpack('f', myData[i]) #Unpack to float
-   tempTuple = f_data[i]
-   f_data[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
-   if (f_data[i]<-3 or f_data[i]>10000):
-    f_data[i]=latestNormal1[i]
-   elif (f_data[i]==-3):
-    continue
-   else:
-    latestNormal1[i]=f_data[i]
-  if (f_data[1]==-3):
-   f_data[1]=0
-   f_data[2]=0
-   f_data[3]=0
-   f_data[5]=0
-   f_data[6]=0
-   f_data[4]=latestNormal1[4]
+  comPzemCycler(energyModuleData1, latestNormal1, readCommand="A")
   for j in range (0,8):
-   indicatorsGroup[0][j]=f_data[j] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[0][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
+  comPzemCycler(energyModuleData2, latestNormal2, readCommand="A")
+  for j in range (0,8):
+   indicatorsGroup[1][j]=energyModuleData2[j] #indicators axes that belongs to general.... testing purpose
 #  print("============================")
   counter+=1
   comArdu.reset_input_buffer()
@@ -252,13 +262,14 @@ while True:
   print("Good bye!!!! Test finished manually")
   GPIO.cleanup()
   quit()
- except:
+ except Exception as err:
+  print(err)
+  print("Something wrong happended. Please trace code or ask to the author")
+  comArdu.close()
+  sleep(.5)
+  comArdu.open()
   commfails+=1
   indicatorsGroup[0][9]=commfails
-  print("Something wrong happended. Please trace code or ask to the author")
   continue
-
-
-
 GPIO.cleanup()
 print("Done")
