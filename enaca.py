@@ -1,3 +1,10 @@
+#                    GNU GENERAL PUBLIC LICENSE
+#                       Version 3, 29 June 2007
+#
+# Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+# Everyone is permitted to copy and distribute verbatim copies
+# of this license document, but changing it is not allowed.
+#=====================================================
 #run enaca.py as this example:
 #nohup python enaca.py >/dev/null 2>&1&
 #Library import in order to make the script works propertly
@@ -20,6 +27,18 @@ GPIO.setup(18, GPIO.IN)
 GPIO.setup(23, GPIO.IN)
 GPIO.setup(24, GPIO.IN)
 GPIO.setup(25, GPIO.IN)
+
+#Oficially defined and controlled variables for comms and processing
+counter=0
+commfails = 0
+wrongData = 0
+statusArray1 = []*32
+myData = ['A']*8 #Init array of string to receive bytes struct packets
+f_data = [0.0]*8 #Init array of float values to unpack and convert to numpy array
+latestNormal1 = [0.0]*8
+energyModuleData1 = [0.0]*8
+latestNormal2 = [0.0]*8
+energyModuleData2 = [0.0]*8
 
 #Variables for True and False to ensure communications
 active = 150
@@ -112,6 +131,42 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
  except: #The idea is to receive control commands as a number
   print("It's not possible. Strings cannot be processed in payload. Only Numbers")
 
+#Function to upgrade energy module information or some other array of 8 float elements
+def comPzemCycler(ofversion, bkpversion, readCommand):
+ comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+ for i in range (0, 8):
+  myData[i] = comArdu.read(4)
+  ofversion[i] = struct.unpack('f', myData[i]) #Unpack to float
+  tempTuple = ofversion[i]
+  ofversion[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
+  if (ofversion[i]<-3 or ofversion[i]>10000): #Just to check if the number is extremely out of range
+   ofversion[i]=bkpversion[i]
+   wrongData+=1
+   indicatorsGroup[0][10]=wrongData #This line is to track in MQTT numbers of bad data transfers
+  elif (f_data[i]==-3):
+   continue
+  else:
+   bkpversion[i]=ofversion[i]
+ if (ofversion[1]==-3):
+  ofversion[1]=0
+  ofversion[2]=0
+  ofversion[3]=0
+  ofversion[5]=0
+  ofversion[6]=0
+  ofversion[4]=bkpversion[4]
+ return(ofversion, bkpversion, readCommand)
+
+#Function to retrieve array of bytes through serial connection
+def readByteArrayInSerial():
+  comArdu.write("g") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+  intData = comArdu.read(32)
+  numberStuffs=[0]*32
+  numColector=0
+  for byteElement in intData:
+   numberStuffs[numColector]=ord(byteElement)
+   numColector+=1
+  return(numberStuffs)
+
 #Rising events for flow sensor totalizer input #4
 def counterPlus(channel):
  global totalizer
@@ -198,53 +253,21 @@ controlsGroup = [list(controsList),
                  list(controsList),
                  list(controsList)]
 
-
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=2)
-counter=0
-commfails = 0
-wrongData = 0
-myData = ['A', 'A', 'A', 'A', 'A', 'A', 'A', 'A'] #Init array of string to receive bytes struct packets
-f_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] #Init array of float values to unpack and convert to numpy array
-latestNormal1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-energyModuleData1 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-latestNormal2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-energyModuleData2 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
-#Function to upgrade energy module information or some other array of 8 float elements
-def comPzemCycler(ofversion, bkpversion, readCommand):
- comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
- for i in range (0, 8):
-  myData[i] = comArdu.read(4)
-  ofversion[i] = struct.unpack('f', myData[i]) #Unpack to float
-  tempTuple = ofversion[i]
-  ofversion[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
-  if (ofversion[i]<-3 or ofversion[i]>10000): #Just to check if the number is extremely out of range
-   ofversion[i]=bkpversion[i]
-  elif (f_data[i]==-3):
-   continue
-  else:
-   bkpversion[i]=ofversion[i]
- if (ofversion[1]==-3):
-  ofversion[1]=0
-  ofversion[2]=0
-  ofversion[3]=0
-  ofversion[5]=0
-  ofversion[6]=0
-  ofversion[4]=bkpversion[4]
- return(ofversion, bkpversion, readCommand)
-
-#Here the loop start
+#Here the loop starts
 while True:
  sleep(.1) #Repeat every 1 second
  try:
   sleep(.1)
-  comPzemCycler(energyModuleData1, latestNormal1, readCommand="A")
+  comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
   for j in range (0,8):
    indicatorsGroup[0][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
-  comPzemCycler(energyModuleData2, latestNormal2, readCommand="A")
+  comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
   for j in range (0,8):
    indicatorsGroup[1][j]=energyModuleData2[j] #indicators axes that belongs to general.... testing purpose
 #  print("============================")
+  statusArray1 = readByteArrayInSerial()
+  #print(statusArray1)
   counter+=1
   comArdu.reset_input_buffer()
   comArdu.reset_output_buffer()
@@ -270,6 +293,7 @@ while True:
   comArdu.open()
   commfails+=1
   indicatorsGroup[0][9]=commfails
+  #quit()
   continue
 GPIO.cleanup()
 print("Done")

@@ -1,3 +1,10 @@
+#                    GNU GENERAL PUBLIC LICENSE
+#                       Version 3, 29 June 2007
+#
+# Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+# Everyone is permitted to copy and distribute verbatim copies
+# of this license document, but changing it is not allowed.
+
 #sys.path.append('.\scriptsComm') #Relative path in case of windows
 import datetime
 import random #This one is to generate random numbers that will be published in created topics
