@@ -39,6 +39,8 @@ latestNormal1 = [0.0]*8
 energyModuleData1 = [0.0]*8
 latestNormal2 = [0.0]*8
 energyModuleData2 = [0.0]*8
+latestNormal9 = [0.0]*8
+sensorsModuleData9 = [0.0]*8
 
 #Variables for True and False to ensure communications
 active = 150
@@ -133,6 +135,7 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
 
 #Function to upgrade energy module information or some other array of 8 float elements
 def comPzemCycler(ofversion, bkpversion, readCommand):
+ energyRetriever=bkpversion[4]
  comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
  for i in range (0, 8):
   myData[i] = comArdu.read(4)
@@ -148,17 +151,18 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
   else:
    bkpversion[i]=ofversion[i]
  if (ofversion[1]==-3):
+  ofversion[4]=energyRetriever
+  bkpversion[4]=energyRetriever
   ofversion[1]=0
   ofversion[2]=0
   ofversion[3]=0
   ofversion[5]=0
   ofversion[6]=0
-  ofversion[4]=bkpversion[4]
  return(ofversion, bkpversion, readCommand)
 
 #Function to retrieve array of bytes through serial connection
 def readByteArrayInSerial():
-  comArdu.write("g") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+  comArdu.write("j") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
   intData = comArdu.read(32)
   numberStuffs=[0]*32
   numColector=0
@@ -254,19 +258,29 @@ controlsGroup = [list(controsList),
                  list(controsList)]
 
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=2)
-#Here the loop starts
+#Here the loop start
 while True:
  sleep(.1) #Repeat every 1 second
  try:
-  sleep(.1)
-  comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
-  for j in range (0,8):
-   indicatorsGroup[0][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
-  comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
-  for j in range (0,8):
-   indicatorsGroup[1][j]=energyModuleData2[j] #indicators axes that belongs to general.... testing purpose
-#  print("============================")
   statusArray1 = readByteArrayInSerial()
+  print(statusArray1)
+  sleep(.1)
+  if (statusArray1[0]==180) or (statusArray1[0]==150 and energyModuleData1[1]>0):
+   comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
+   for j in range (0,8):
+    indicatorsGroup[0][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
+  if (statusArray1[1]==180) or (statusArray1[1]==150 and energyModuleData2[1]>0):
+   comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
+   for j in range (0,8):
+    indicatorsGroup[1][j]=energyModuleData2[j] #indicators axes that belongs to general.... testing purpose
+  comPzemCycler(sensorsModuleData9, latestNormal9, readCommand="i")
+  print(sensorsModuleData9)
+  indicatorsGroup[0][0]=sensorsModuleData9[0] #Delete this as soon as test is finished
+#  print("============================")
+  #statusArray1 = readByteArrayInSerial()
+#  print(statusArray1)
+  #print(energyModuleData1)
+  #print(energyModuleData2)
   #print(statusArray1)
   counter+=1
   comArdu.reset_input_buffer()
@@ -294,6 +308,7 @@ while True:
   commfails+=1
   indicatorsGroup[0][9]=commfails
   #quit()
+  #pass
   continue
 GPIO.cleanup()
 print("Done")
