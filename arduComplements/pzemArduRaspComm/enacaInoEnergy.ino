@@ -6,13 +6,15 @@
 //of this license document, but changing it is not allowed.
 
 //Enacaino-energy V1.0
-//Last modification 21-feb-2021
+//Last modification 24-feb-2021
 //This code applies for energy monitoring device PZEM-004 V3 with Arduino Mega 2560.
 //Created by: William Jiménez
 
 #include <SoftwareSerial.h>
 #include <PZEM004Tv30.h>
 
+byte inact = 150;
+byte act = 180;
 float windSpeed = 0.00;
 #define FLOATS_SENT 8
 float frameHouseF1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the house
@@ -21,15 +23,23 @@ float frameApt1F1[FLOATS_SENT]; //Data frame that belongs to energy monitoring f
 float frameApt1F2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt1
 float frameApt2F1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
 float frameApt2F2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
-byte statusArray[32] = {41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41, 41};
-
+float frameMiniLocalF1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
+float frameMiniLocalF2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
+float frameSensors1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
+byte statusArray[32];
+unsigned long previousMillis = 0;        // will store last time LED was updated
+const long interval = 1500;           // interval at which to blink (milliseconds)
 //Energy monitoring's address device is defined with another separate and code for using with one at a time
-PZEM004Tv30 pzemHouseF1(&Serial3, 0x42); //PZEM module for house
-PZEM004Tv30 pzemHouseF2(&Serial3, 0x43); //PZEM module for house
-PZEM004Tv30 pzemApt1F1(&Serial3, 0x44); //PZEM module for aparment 1
-PZEM004Tv30 pzemApt1F2(&Serial3, 0x45); //PZEM module for aparment 1
-PZEM004Tv30 pzemApt2F1(&Serial3, 0x46); //PZEM module for aparment 2
-PZEM004Tv30 pzemApt2F2(&Serial3, 0x47); //PZEM module for aparment 2
+PZEM004Tv30 pzemHouseF1(&Serial3, 0x42); //PZEM module for house phase 1
+PZEM004Tv30 pzemHouseF2(&Serial3, 0x43); //PZEM module for house phase 2
+PZEM004Tv30 pzemApt1F1(&Serial3, 0x44); //PZEM module for aparment 1 phase 1
+PZEM004Tv30 pzemApt1F2(&Serial3, 0x45); //PZEM module for aparment 1 phase 2
+PZEM004Tv30 pzemApt2F1(&Serial3, 0x46); //PZEM module for aparment 2 phase 1
+PZEM004Tv30 pzemApt2F2(&Serial3, 0x47); //PZEM module for aparment 2 phase 2
+PZEM004Tv30 pzemMiniLocalF1(&Serial3, 0x48); //PZEM module for small business phase 1
+PZEM004Tv30 pzemMiniLocalF2(&Serial3, 0x49); //PZEM module for small business phase 2
+
+
 char raspCommand;
 bool charComplete = false;
 void setup() {
@@ -42,66 +52,82 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentMillis = millis();
   windSpeed = (analogRead(A0)); //Read wind speed (0-5V) connected to analog input A0
   windSpeed = (windSpeed * 30) / 1023; //According to manual max speed range is around 30m/s
   //WARNING
   frameHouseF1[0] = windSpeed;  //Element Zero is available for each array. Please fill it with any float value to avoid errors in serial comm
+  frameSensors1[0] = windSpeed; //Sensors will have an independent float array
+  frameSensors1[1] = windSpeed + .5; //Sensors will have an independent float array
+  frameSensors1[2] = windSpeed + .7; //Sensors will have an independent float array
+  frameSensors1[3] = windSpeed + .8; //Sensors will have an independent float array
+  frameSensors1[4] = windSpeed + 1.1; //Sensors will have an independent float array
+  frameSensors1[5] = windSpeed + 1.3; //Sensors will have an independent float array
+  frameSensors1[6] = windSpeed + 1.5; //Sensors will have an independent float array
+  frameSensors1[7] = windSpeed + 1.8; //Sensors will have an independent float array
 
-  //Leer en primer módulo todos los datos de energía
-  pzemGetter(frameHouseF1, pzemHouseF1);
-  pzemGetter(frameHouseF2, pzemHouseF2);
-  pzemGetter(frameApt1F1, pzemApt1F1);
-  pzemGetter(frameApt1F2, pzemApt1F2);
-  pzemGetter(frameApt2F1, pzemApt2F1);
-  pzemGetter(frameApt2F2, pzemApt2F2);
-  /*  Serial.println(frameHouse[1]);
-    Serial.println(frameHouse[2]);
-    Serial.println(frameHouse[3]);
-    Serial.println(frameHouse[4]);
-    Serial.println(frameHouse[5]);
-    Serial.println(frameHouse[6]);
-    Serial.println(frameHouse[7]);
-  */
-
-  delay(100);
+  if (currentMillis - previousMillis >= interval) {
+    // save the last time you blinked the LED
+    previousMillis = currentMillis;
+    //Leer en primer módulo todos los datos de energía
+    pzemGetter(frameHouseF1, pzemHouseF1);
+    if (frameHouseF1[1] == -3) {
+      statusArray[0] = inact;
+    }
+    else {
+      statusArray[0] = act;
+    }
+    pzemGetter(frameHouseF2, pzemHouseF2);
+    if (frameHouseF2[1] == -3) {
+      statusArray[1] = inact;
+    }
+    else {
+      statusArray[1] = act;
+    }
+    //  pzemGetter(frameApt1F1, pzemApt1F1);
+    //  pzemGetter(frameApt1F2, pzemApt1F2);
+    //  pzemGetter(frameApt2F1, pzemApt2F1);
+    //  pzemGetter(frameApt2F2, pzemApt2F2);
+    //  pzemGetter(frameMiniLocalF1, pzemMiniLocalF1);
+    //  pzemGetter(frameMiniLocalF2, pzemMiniLocalF2);
+  }
 }
 
 void serialEvent2() {
   raspCommand = (char)Serial2.read();
-  //Serial.println(raspCommand);
-  charComplete = true;
-
-  if (charComplete == true) {
-    switch (raspCommand) {
-      case 'a':
-        Serial2.write((byte*) &frameHouseF1, FLOATS_SENT * sizeof(float));
+  switch (raspCommand) {
+    case 'a':
+      Serial2.write((byte*) &frameHouseF1, FLOATS_SENT * sizeof(float));
+      break;
+    case 'b':
+      Serial2.write((byte*) &frameHouseF2, FLOATS_SENT * sizeof(float));
+      break;
+    case 'c':
+      Serial2.write((byte*) &frameApt1F1, FLOATS_SENT * sizeof(float));
+      break;
+    case 'd':
+      Serial2.write((byte*) &frameApt1F2, FLOATS_SENT * sizeof(float));
+      break;
+    case 'e':
+      Serial2.write((byte*) &frameApt2F1, FLOATS_SENT * sizeof(float));
+      break;
+    case 'f':
+      Serial2.write((byte*) &frameApt2F2, FLOATS_SENT * sizeof(float));
+      break;
+    /*  case 'g':
+        Serial2.write((byte*) &FrameMiniLocalF1, FLOATS_SENT * sizeof(float));
         break;
-      case 'b':
-        Serial2.write((byte*) &frameHouseF2, FLOATS_SENT * sizeof(float));
-        break;
-      case 'c':
-        Serial2.write((byte*) &frameApt1F1, FLOATS_SENT * sizeof(float));
-        break;
-      case 'd':
-        Serial2.write((byte*) &frameApt1F2, FLOATS_SENT * sizeof(float));
-        break;
-      case 'e':
-        Serial2.write((byte*) &frameApt2F1, FLOATS_SENT * sizeof(float));
-        break;
-      case 'f':
-        Serial2.write((byte*) &frameApt2F2, FLOATS_SENT * sizeof(float));
-        break;
-      case 'g':
-        Serial2.write((byte*)&statusArray, sizeof(statusArray));
-        //Serial2.write(statusArray, 32);
-        break;
-    }
-    raspCommand = 'Z';
-    charComplete = false;
+      case 'h':
+        Serial2.write((byte*) &FrameMiniLocalF2, FLOATS_SENT * sizeof(float));
+        break;*/
+    case 'i':
+      Serial2.write((byte*) &frameSensors1, FLOATS_SENT * sizeof(float));
+      break;
+    case 'j':
+      Serial2.write((byte*)&statusArray, sizeof(statusArray));
+      //Serial2.write(statusArray, 32);
+      break;
   }
-
-
-
 }
 
 //Function definition to get data from energy modules pzem004t installed in the same bus. Code efficiency
