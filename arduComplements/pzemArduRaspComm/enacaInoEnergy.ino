@@ -6,15 +6,14 @@
 //of this license document, but changing it is not allowed.
 
 //Enacaino-energy V1.0
-//Last modification 24-feb-2021
+//Last modification 26-feb-2021
 //This code applies for energy monitoring device PZEM-004 V3 with Arduino Mega 2560.
 //Created by: William Jiménez
 
-#include <SoftwareSerial.h>
 #include <PZEM004Tv30.h>
 
-byte inact = 150;
-byte act = 180;
+byte disabled = 150;
+byte enabled = 180;
 float windSpeed = 0.00;
 #define FLOATS_SENT 8
 float frameHouseF1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the house
@@ -27,8 +26,10 @@ float frameMiniLocalF1[FLOATS_SENT]; //Data frame that belongs to energy monitor
 float frameMiniLocalF2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
 float frameSensors1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
 byte statusArray[32];
-unsigned long previousMillis = 0;        // will store last time LED was updated
-const long interval = 1500;           // interval at which to blink (milliseconds)
+unsigned long previousMillis1 = 0;        // will store last time LED was updated
+const long interval1 = 1500;           // interval at which to blink (milliseconds)
+unsigned long previousMillis2 = 0;        // will store last time LED was updated
+const long interval2 = 7500;           // interval at which to blink (milliseconds)
 //Energy monitoring's address device is defined with another separate and code for using with one at a time
 PZEM004Tv30 pzemHouseF1(&Serial3, 0x42); //PZEM module for house phase 1
 PZEM004Tv30 pzemHouseF2(&Serial3, 0x43); //PZEM module for house phase 2
@@ -45,57 +46,58 @@ bool charComplete = false;
 void setup() {
   Serial.begin(115200); //This is the speed for serial monitoring
   Serial2.begin(9600);  //Speed for serial comm with raspberry pi through TTL leveler
-
   //pzemHouse.resetEnergy(); //In case you need to reset energy totalizer uncomment this for the specific module
   delay(200);
-  // put your setup code here, to run once:
 }
 
 void loop() {
   unsigned long currentMillis = millis();
   windSpeed = (analogRead(A0)); //Read wind speed (0-5V) connected to analog input A0
-  windSpeed = (windSpeed * 30) / 1023; //According to manual max speed range is around 30m/s
-  //WARNING
-  frameHouseF1[0] = windSpeed;  //Element Zero is available for each array. Please fill it with any float value to avoid errors in serial comm
-  frameSensors1[0] = windSpeed; //Sensors will have an independent float array
-  frameSensors1[1] = windSpeed + .5; //Sensors will have an independent float array
-  frameSensors1[2] = windSpeed + .7; //Sensors will have an independent float array
-  frameSensors1[3] = windSpeed + .8; //Sensors will have an independent float array
-  frameSensors1[4] = windSpeed + 1.1; //Sensors will have an independent float array
-  frameSensors1[5] = windSpeed + 1.3; //Sensors will have an independent float array
-  frameSensors1[6] = windSpeed + 1.5; //Sensors will have an independent float array
-  frameSensors1[7] = windSpeed + 1.8; //Sensors will have an independent float array
+  windSpeed = (windSpeed * 30) / 1023; //According to manual max speed range is around 30m/s WARNING
+  frameSensors1[0] = windSpeed; //wind speed sensor location in float Sensor Array
+  frameSensors1[1] = windSpeed + .5; //Definition pending
+  frameSensors1[2] = windSpeed + .7; //Definition pending
+  frameSensors1[3] = windSpeed + .8; //Definition pending
+  frameSensors1[4] = windSpeed + 1.1; //Definition pending
+  frameSensors1[5] = windSpeed + 1.3; //Definition pending
+  frameSensors1[6] = windSpeed + 1.5; //Definition pending
+  frameSensors1[7] = windSpeed + 1.8; //Definition pending
 
-  if (currentMillis - previousMillis >= interval) {
-    // save the last time you blinked the LED
-    previousMillis = currentMillis;
-    //Leer en primer módulo todos los datos de energía
-    pzemGetter(frameHouseF1, pzemHouseF1);
-    if (frameHouseF1[1] == -3) {
-      statusArray[0] = inact;
-    }
-    else {
-      statusArray[0] = act;
-    }
-    pzemGetter(frameHouseF2, pzemHouseF2);
-    if (frameHouseF2[1] == -3) {
-      statusArray[1] = inact;
-    }
-    else {
-      statusArray[1] = act;
-    }
-    //  pzemGetter(frameApt1F1, pzemApt1F1);
-    //  pzemGetter(frameApt1F2, pzemApt1F2);
-    //  pzemGetter(frameApt2F1, pzemApt2F1);
-    //  pzemGetter(frameApt2F2, pzemApt2F2);
-    //  pzemGetter(frameMiniLocalF1, pzemMiniLocalF1);
-    //  pzemGetter(frameMiniLocalF2, pzemMiniLocalF2);
+  //This section is defined for how frequently PZEM energy modules will be read
+  //Maybe you consider in your design to have different groups with different scanning priorities
+  if (currentMillis - previousMillis1 >= interval1) {
+    previousMillis1 = currentMillis; // save the last time you blinked the LED
+    //As long as many modules you need to defined the same definition must be made as the following lines and their adjustments
+    pzemGetter(frameHouseF1, pzemHouseF1); //Read PZEM module in house's phase 1
+    statusArray[0] = voltageDetect(frameHouseF1[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameHouseF2, pzemHouseF2); //Read PZEM module in house's phase 2
+    statusArray[1] = voltageDetect(frameHouseF2[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameApt1F1, pzemApt1F1);
+    statusArray[2] = voltageDetect(frameApt1F1[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameApt1F2, pzemApt1F2);
+    statusArray[3] = voltageDetect(frameApt1F2[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
   }
-}
+  //Low priority group
+  if (currentMillis - previousMillis2 >= interval2) {
+    previousMillis2 = currentMillis; // save the last time you blinked the LED
+    //================Belongs to first group
 
+    //============================
+    pzemGetter(frameApt2F1, pzemApt2F1);
+    statusArray[4] = voltageDetect(frameApt2F1[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameApt2F2, pzemApt2F2);
+    statusArray[5] = voltageDetect(frameApt2F2[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameMiniLocalF1, pzemMiniLocalF1);
+    statusArray[6] = voltageDetect(frameMiniLocalF1[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+    pzemGetter(frameMiniLocalF2, pzemMiniLocalF2);
+    statusArray[7] = voltageDetect(frameMiniLocalF2[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+  }
+}//End loop function
+
+//Detect and process command request from raspberry
 void serialEvent2() {
-  raspCommand = (char)Serial2.read();
-  switch (raspCommand) {
+  raspCommand = (char)Serial2.read(); //A command char received from raspberry
+  switch (raspCommand) { //Send float or bytes array according to char received
     case 'a':
       Serial2.write((byte*) &frameHouseF1, FLOATS_SENT * sizeof(float));
       break;
@@ -114,27 +116,37 @@ void serialEvent2() {
     case 'f':
       Serial2.write((byte*) &frameApt2F2, FLOATS_SENT * sizeof(float));
       break;
-    /*  case 'g':
-        Serial2.write((byte*) &FrameMiniLocalF1, FLOATS_SENT * sizeof(float));
-        break;
-      case 'h':
-        Serial2.write((byte*) &FrameMiniLocalF2, FLOATS_SENT * sizeof(float));
-        break;*/
+    case 'g':
+      Serial2.write((byte*) &frameMiniLocalF1, FLOATS_SENT * sizeof(float));
+      break;
+    case 'h':
+      Serial2.write((byte*) &frameMiniLocalF2, FLOATS_SENT * sizeof(float));
+      break;
     case 'i':
       Serial2.write((byte*) &frameSensors1, FLOATS_SENT * sizeof(float));
       break;
     case 'j':
       Serial2.write((byte*)&statusArray, sizeof(statusArray));
-      //Serial2.write(statusArray, 32);
       break;
   }
 }
 
 //Function definition to get data from energy modules pzem004t installed in the same bus. Code efficiency
 float pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule) {
+  frmEnergy[0] = 26.10; //I added this one as a personal initial element verification in raspberry
   frmEnergy[1] = pzemModule.voltage();
-  if (isnan(frmEnergy[1]) || (frmEnergy[1] > 500)) { //Validating voltage value in case of power off or bigger than expected
+  if (isnan(frmEnergy[1]) || (frmEnergy[1] > 300)) { //Validating voltage value in case of power off or bigger than expected
     frmEnergy[1] = -3.0;
+  }
+  //If there's no voltage then avoid requesting the rest of variables
+  if (frmEnergy[1] == -3.0) {
+    frmEnergy[2] = -3.0;
+    frmEnergy[3] = -3.0;
+    frmEnergy[4] = -3.0;
+    frmEnergy[5] = -3.0;
+    frmEnergy[6] = -3.0;
+    frmEnergy[7] = 26.10; //I added this one as a personal final element verification in raspberry
+    return;
   }
   frmEnergy[2] = pzemModule.power();
   if ((isnan(frmEnergy[2])) || (frmEnergy[3] > 4000)) { //Validating power value in case of power off or bigger than expected for 110VAC
@@ -149,7 +161,7 @@ float pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule) {
     frmEnergy[4] = -3.0;
   }
   frmEnergy[5] = pzemModule.frequency();
-  if ((isnan(frmEnergy[5])) || (frmEnergy[5] > 150)) { //Validating frecuency value in case of power off or bigger than expected
+  if ((isnan(frmEnergy[5])) || (frmEnergy[5] > 100)) { //Validating frecuency value in case of power off or bigger than expected
     frmEnergy[5] = -3.0;
   }
   frmEnergy[6] = pzemModule.pf();
@@ -157,4 +169,13 @@ float pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule) {
     frmEnergy[6] = -3.0;
   }
   frmEnergy[7] = 26.10; //I added this one as a personal final element verification in raspberry
+}
+
+byte voltageDetect(float framElement) {
+  if (framElement == -3) {
+    return (disabled); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
+  }
+  else {
+    return (enabled); //set status bit energyzed in order to be read from raspberry
+  }
 }

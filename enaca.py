@@ -32,25 +32,31 @@ GPIO.setup(25, GPIO.IN)
 counter=0
 commfails = 0
 wrongData = 0
-statusArray1 = []*32
 myData = ['A']*8 #Init array of string to receive bytes struct packets
 f_data = [0.0]*8 #Init array of float values to unpack and convert to numpy array
 latestNormal1 = [0.0]*8
 energyModuleData1 = [0.0]*8
 latestNormal2 = [0.0]*8
 energyModuleData2 = [0.0]*8
+latestNormal3 = [0.0]*8
+energyModuleData3 = [0.0]*8
+latestNormal4 = [0.0]*8
+energyModuleData4 = [0.0]*8
+latestNormal5 = [0.0]*8
+energyModuleData5 = [0.0]*8
+latestNormal6 = [0.0]*8
+energyModuleData6 = [0.0]*8
+latestNormal7 = [0.0]*8
+energyModuleData7 = [0.0]*8
+latestNormal8 = [0.0]*8
+energyModuleData8 = [0.0]*8
 latestNormal9 = [0.0]*8
 sensorsModuleData9 = [0.0]*8
+statusArray10 = []*32
 
 #Variables for True and False to ensure communications
-active = 150
-inactive = 180
-
-#Initial lists to calculate consumption per day
-litresStartingDay = [0, 0, 0 ,0]
-litresEndDay = [0, 0, 0, 0]
-energyStartinDay = [0, 0, 0, 0]
-energyEndDay = [0, 0, 0, 0]
+disabled = 150
+enabled = 180
 
 #counter init values for water consumption
 totalizer = 0
@@ -66,36 +72,6 @@ port = 1883 #The one that mosquitto uses
 
 #In case of using i2c display
 initDispT = 1 #Time for displayin message
-
-#References to reset counters
-refSave = 0
-refResetDay = 0
-refResetHour = 0
-refResetMin = 0
-
-#Variables to study counter overflow
-fs1 = 0.00
-fs2 = 0.00
-fs3 = 0.00
-fs4 = 0.00
-
-#Final variables for liter conversion to CSV file
-litersHouse = 0.00
-litersApt1 = 0.00
-litersApt2 = 0.00
-litersTot = 0.00
-
-#Variables for paying values according to each section
-valuePayHouse = 0.00
-valuePayApt1 = 0.00
-valuePayApt2 = 0.00
-#Variables for the last month to pay
-lastPayValueHouse = 0.00
-lastPayValueApt1 = 0.00
-lastPayValueApt2 = 0.00
-
-#Variable for saving last energy paying value in apt1
-lastEnergyPayApt1 = 0.00
 
 class bcolors: #To be used for displaying alarms when debugging
  HEADER = '\033[95m'
@@ -176,51 +152,47 @@ def counterPlus(channel):
  global totalizer
  if GPIO.input(channel)>0.5: #Get pulse
   controlsGroup[0][4]+=1
-  totalizer = controlsGroup [0][4]
-  statusGroup = [0][2] = 1
+  totalizer = controlsGroup[0][4]
+  statusGroup[0][2] = 1
  else:
   controlsGroup[0][4]+=0
-  totalizer = controlsGroup [0][4]
+  totalizer = controlsGroup[0][4]
 
 def counterPlus1(channel):
  global acumApt1
  if GPIO.input(channel)>0.5: #Get pulse
   controlsGroup[2][11]+=1
-  acumApt1 = controlsGroup [2][11]
-  statusGroup = [2][4] = 1
+  acumApt1 = controlsGroup[2][11]
+  statusGroup[2][4] = 1
  else:
   controlsGroup[2][11]=0
-  totalizer = controlsGroup [2][11]
+  totalizer = controlsGroup[2][11]
 
 def counterPlus2(channel):
  global acumApt2
  if GPIO.input(channel)>0.5: #Get pulse
   controlsGroup[3][7]+=1
-  acumApt2 = controlsGroup [3][7]
-  statusGroup = [3][3] = 1
+  acumApt2 = controlsGroup[3][7]
+  statusGroup[3][3] = 1
  else:
   controlsGroup[3][7]=0
-  totalizer = controlsGroup [3][7]
+  totalizer = controlsGroup[3][7]
 
 def counterPlus3(channel):
  global acumHouse
  if GPIO.input(channel)>0.5: #Get pulse
   controlsGroup[1][9]+=1
-  acumApt2 = controlsGroup [1][9]
-  statusGroup = [1][5] = 1
+  acumHouse = controlsGroup[1][9]
+  statusGroup[1][5] = 1
  else:
   controlsGroup[1][9]=0
-  totalizer = controlsGroup [1][9]
+  totalizer = controlsGroup[1][9]
 
 #Interrupt routines to count rising edges in digital inputs
 GPIO.add_event_detect(18, GPIO.RISING, callback=counterPlus, bouncetime=3)
 GPIO.add_event_detect(23, GPIO.RISING, callback=counterPlus1, bouncetime=3)
 GPIO.add_event_detect(24, GPIO.RISING, callback=counterPlus2, bouncetime=3)
 GPIO.add_event_detect(25, GPIO.RISING, callback=counterPlus3, bouncetime=3)
-
-kwhrApt1 = 0.0
-lastKwhrApt1 = 0.0
-lastAmpApt1 = 0.0
 
 mqttc.on_connect = on_connect
 mqttc.on_subscribe = on_subscribe
@@ -232,12 +204,12 @@ mqttc.loop_start()
 
 indicatorList = []
 statusList = []
-controsList = []
+controlsList = []
 
 for x in range(len(positionsBase)):
  indicatorList.append(0)
  statusList.append(0)
- controsList.append(0)
+ controlsList.append(0)
 
 indicatorsGroup = [list(indicatorList),
                    list(indicatorList),
@@ -251,37 +223,62 @@ statusGroup = [list(statusList),
                list(statusList),
                list(statusList)]
 
-controlsGroup = [list(controsList),
-                 list(controsList),
-                 list(controsList),
-                 list(controsList),
-                 list(controsList)]
+controlsGroup = [list(controlsList),
+                 list(controlsList),
+                 list(controlsList),
+                 list(controlsList),
+                 list(controlsList)]
 
+#Definition of serial port object, speed and its timeout
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=2)
-#Here the loop start
+#Here the loop starts
 while True:
- sleep(.1) #Repeat every 1 second
+ sleep(.1) #Maybe this delay wont be needed as long as the program grows
  try:
-  statusArray1 = readByteArrayInSerial()
-  print(statusArray1)
-  sleep(.1)
-  if (statusArray1[0]==180) or (statusArray1[0]==150 and energyModuleData1[1]>0):
+  statusArray10 = readByteArrayInSerial()
+  #print(statusArray10)
+  sleep(.3) #Maybe this delay wont be needed as long as the program grows
+#===========Retrieve data 8 float array PZEM function Definition =========
+  #Block to read PZEM modules from House
+  if (statusArray10[0]==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
    comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
    for j in range (0,8):
-    indicatorsGroup[0][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
-  if (statusArray1[1]==180) or (statusArray1[1]==150 and energyModuleData2[1]>0):
+    indicatorsGroup[1][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
+  if (statusArray10[1]==enabled) or (statusArray10[1]==disabled and energyModuleData2[1]>0):
    comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
+   for j in range (8,16):
+    indicatorsGroup[1][j]=energyModuleData2[j-8] #indicators axes that belongs to general.... testing purpose
+  #Block to read PZEM modules from Apartment1
+  if (statusArray10[2]==enabled) or (statusArray10[2]==disabled and energyModuleData3[1]>0):
+   comPzemCycler(energyModuleData3, latestNormal3, readCommand="c")
    for j in range (0,8):
-    indicatorsGroup[1][j]=energyModuleData2[j] #indicators axes that belongs to general.... testing purpose
+    indicatorsGroup[2][j]=energyModuleData3[j] #indicators axes that belongs to general.... testing purpose
+  if (statusArray10[3]==enabled) or (statusArray10[3]==disabled and energyModuleData4[1]>0):
+   comPzemCycler(energyModuleData4, latestNormal4, readCommand="d")
+   for j in range (8,16):
+    indicatorsGroup[2][j]=energyModuleData4[j-8] #indicators axes that belongs to general.... testing purpose
+  #Block to read PZEM modules from Apartment2
+  if (statusArray10[4]==enabled) or (statusArray10[4]==disabled and energyModuleData5[1]>0):
+   comPzemCycler(energyModuleData5, latestNormal5, readCommand="e")
+   for j in range (0,8):
+    indicatorsGroup[3][j]=energyModuleData5[j] #indicators axes that belongs to general.... testing purpose
+  if (statusArray10[5]==enabled) or (statusArray10[5]==disabled and energyModuleData6[1]>0):
+   comPzemCycler(energyModuleData6, latestNormal6, readCommand="f")
+   for j in range (8,16):
+    indicatorsGroup[3][j]=energyModuleData6[j-8] #indicators axes that belongs to general.... testing purpose
+  #Block to read PZEM modules from Mini Local
+  if (statusArray10[6]==enabled) or (statusArray10[6]==disabled and energyModuleData7[1]>0):
+   comPzemCycler(energyModuleData7, latestNormal7, readCommand="g")
+   for j in range (0,8):
+    indicatorsGroup[4][j]=energyModuleData7[j] #indicators axes that belongs to general.... testing purpose
+  if (statusArray10[7]==enabled) or (statusArray10[7]==disabled and energyModuleData8[1]>0):
+   comPzemCycler(energyModuleData8, latestNormal8, readCommand="h")
+   for j in range (8,16):
+    indicatorsGroup[4][j]=energyModuleData8[j-8] #indicators axes that belongs to general.... testing purpose
+  #Block to read data from external sensors installed in arduino mega
   comPzemCycler(sensorsModuleData9, latestNormal9, readCommand="i")
-  print(sensorsModuleData9)
   indicatorsGroup[0][0]=sensorsModuleData9[0] #Delete this as soon as test is finished
-#  print("============================")
-  #statusArray1 = readByteArrayInSerial()
-#  print(statusArray1)
-  #print(energyModuleData1)
-  #print(energyModuleData2)
-  #print(statusArray1)
+#=======================================================================
   counter+=1
   comArdu.reset_input_buffer()
   comArdu.reset_output_buffer()
@@ -303,12 +300,11 @@ while True:
   print(err)
   print("Something wrong happended. Please trace code or ask to the author")
   comArdu.close()
-  sleep(.5)
+  sleep(.1) #Maybe this delay wont be needed as long as the program grows
   comArdu.open()
   commfails+=1
   indicatorsGroup[0][9]=commfails
   #quit()
-  #pass
   continue
 GPIO.cleanup()
 print("Done")
