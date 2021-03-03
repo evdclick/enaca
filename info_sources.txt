@@ -1,0 +1,27 @@
+Calculate time difference in minutes in python
+https://www.kite.com/python/answers/how-to-calculate-a-time-difference-in-minutes-in-python#:~:text=Subtract%20one%20datetime%20object%20from,the%20time%20difference%20in%20minutes.
+
+Playing with time series data in python
+https://towardsdatascience.com/playing-with-time-series-data-in-python-959e2485bff8
+
+How to round elements in a list python
+https://www.kite.com/python/answers/how-to-round-all-elements-of-a-list-of-numbers-in-python
+
+Create One-element tuple
+https://note.nkmk.me/en/python-tuple-single-empty/#:~:text=When%20generating%20a%20one-element,and%20not%20considered%20a%20tuple.&text=To%20generate%20a%20one-element,is%20required%20at%20the%20end.
+
+Packing and unpacking binary float in python
+https://stackoverflow.com/questions/16165488/packing-and-unpacking-binary-float-in-python
+
+Pyserial documentation
+https://pyserial.readthedocs.io/en/latest/index.html
+
+Pack sample to pack/unpack array of floats
+a=[21.6,13.1,8,3.4,1.1,2.3,4.5,21.6]
+data=[]
+for i in a:
+	data.append(struct.pack('f',i))
+#Y hacemos unpack
+result=[]
+for i in data:
+	result.append(struct.unpack('f',i))
