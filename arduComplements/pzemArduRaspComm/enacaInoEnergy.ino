@@ -6,7 +6,7 @@
 //of this license document, but changing it is not allowed.
 
 //Enacaino-energy V1.0
-//Last modification 26-feb-2021
+//Last modification 25-feb-2021
 //This code applies for energy monitoring device PZEM-004 V3 with Arduino Mega 2560.
 //Created by: William Jiménez
 
@@ -15,7 +15,9 @@
 byte disabled = 150;
 byte enabled = 180;
 float windSpeed = 0.00;
+char raspCommand;
 #define FLOATS_SENT 8
+//============Arrays definition to be reported to raspberry through serial connection
 float frameHouseF1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the house
 float frameHouseF2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the house
 float frameApt1F1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt1
@@ -26,11 +28,14 @@ float frameMiniLocalF1[FLOATS_SENT]; //Data frame that belongs to energy monitor
 float frameMiniLocalF2[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
 float frameSensors1[FLOATS_SENT]; //Data frame that belongs to energy monitoring from the apt2
 byte statusArray[32];
+//--------------------------
+//===========Timing variables defined to scan energy modules according to priority assigned
 unsigned long previousMillis1 = 0;        // will store last time LED was updated
 const long interval1 = 1500;           // interval at which to blink (milliseconds)
 unsigned long previousMillis2 = 0;        // will store last time LED was updated
 const long interval2 = 7500;           // interval at which to blink (milliseconds)
-//Energy monitoring's address device is defined with another separate and code for using with one at a time
+//--------------------------
+//===========Energy monitoring's address device is defined with another separate code for using with one at a time
 PZEM004Tv30 pzemHouseF1(&Serial3, 0x42); //PZEM module for house phase 1
 PZEM004Tv30 pzemHouseF2(&Serial3, 0x43); //PZEM module for house phase 2
 PZEM004Tv30 pzemApt1F1(&Serial3, 0x44); //PZEM module for aparment 1 phase 1
@@ -39,13 +44,10 @@ PZEM004Tv30 pzemApt2F1(&Serial3, 0x46); //PZEM module for aparment 2 phase 1
 PZEM004Tv30 pzemApt2F2(&Serial3, 0x47); //PZEM module for aparment 2 phase 2
 PZEM004Tv30 pzemMiniLocalF1(&Serial3, 0x48); //PZEM module for small business phase 1
 PZEM004Tv30 pzemMiniLocalF2(&Serial3, 0x49); //PZEM module for small business phase 2
-
-
-char raspCommand;
-bool charComplete = false;
+//--------------------------
 void setup() {
   Serial.begin(115200); //This is the speed for serial monitoring
-  Serial2.begin(9600);  //Speed for serial comm with raspberry pi through TTL leveler
+  Serial2.begin(9600);  //Speed for serial comm with raspberry pi through USB Serial FTDI adapter
   //pzemHouse.resetEnergy(); //In case you need to reset energy totalizer uncomment this for the specific module
   delay(200);
 }
@@ -80,9 +82,6 @@ void loop() {
   //Low priority group
   if (currentMillis - previousMillis2 >= interval2) {
     previousMillis2 = currentMillis; // save the last time you blinked the LED
-    //================Belongs to first group
-
-    //============================
     pzemGetter(frameApt2F1, pzemApt2F1);
     statusArray[4] = voltageDetect(frameApt2F1[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
     pzemGetter(frameApt2F2, pzemApt2F2);

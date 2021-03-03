@@ -6,7 +6,7 @@
 # of this license document, but changing it is not allowed.
 
 nodes = ['ElectroMESH']
-zones = ['general', 'house', 'apartment1', 'apartment2', 'smallBussines']
+zones = ['general', 'house', 'apartment1', 'apartment2', 'smallBusiness']
 category = ('indicators', 'status', 'controls')
 positionsBase = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09',
 '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
