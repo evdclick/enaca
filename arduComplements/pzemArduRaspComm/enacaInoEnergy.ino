@@ -71,7 +71,7 @@ void loop() {
     previousMillis1 = currentMillis; // save the last time you blinked the LED
     for (int blockFrame1 = 0; blockFrame1 < 4; blockFrame1++) {
       //pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], busyIndex = blockFrame1 + 8);
-      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray[blockFrame1 + 8]);
+      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray, busyIndex = blockFrame1 + 8);
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
         pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
@@ -83,7 +83,7 @@ void loop() {
     previousMillis2 = currentMillis; // save the last time you blinked the LED
     for (int blockFrame1 = 4; blockFrame1 < 8; blockFrame1++) {
       //pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], busyIndex = blockFrame1 + 8);
-      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray[blockFrame1 + 8]);
+      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray, busyIndex = blockFrame1 + 8);
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
         pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
@@ -95,6 +95,7 @@ void loop() {
 //Detect and process command request from raspberry
 void serialEvent2() {
   raspCommand = (char)Serial2.read(); //A command char received from raspberry
+  //Serial.println(raspCommand);
   bool flagToFloatTransmit = false;
   int pzemPositioner = 0;
   if (raspCommand >= 'a' && raspCommand <= 'i') {
@@ -119,13 +120,10 @@ void serialEvent2() {
   } else if (raspCommand == 'i') {
     float checkSumFloat = 0.0;
     frameSensors1[0] = 11.07;
-    //Serial.println(frameSensors1[0]);
     for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
-      //Serial.println(frmEnergy[sumIndexer]);
       checkSumFloat = checkSumFloat + frameSensors1[sumIndexer];
     }
     frameSensors1[7] = checkSumFloat; //I added this one as a personal final element verification in raspberry
-    //Serial.println(frameSensors1[7]);
     Serial2.write((byte*) &frameSensors1, floatsToSend * sizeof(float));
     return;
   } else if (raspCommand == 'j') {
@@ -157,22 +155,27 @@ void serialEvent2() {
   if (flagToFloatTransmit) {
     for (int indexToSerial = 0; indexToSerial < 8; indexToSerial++) {
       fFrameToSerial[indexToSerial] = pzemGroup[pzemPositioner][indexToSerial];
+      //Serial.println(fFrameToSerial[indexToSerial]);
     }
+    float checkSumFloat = 0.0;
+    fFrameToSerial[0] = 11.07;
+    for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
+      checkSumFloat = checkSumFloat + fFrameToSerial[sumIndexer];
+    }
+    fFrameToSerial[7] = checkSumFloat; //I added this one as a personal final element verification in raspberry
     Serial2.write((byte*) &fFrameToSerial, floatsToSend * sizeof(float));
     return;
   }
 }
 
 //Function definition to get data from energy modules pzem004t installed in the same bus. Code efficiency
-void pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule, byte busyFlagLocator) {
-  busyFlagLocator = enabled;
-  //statusArray[busyFlagLocator] = enabled;
+void pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule, byte statusFlagger[], byte busyFlagLocator) {
+  statusFlagger[busyFlagLocator] = enabled;
   frmEnergy[0] = 11.07; //I added this one as a personal initial element verification in raspberry
   frmEnergy[1] = pzemModule.voltage();
   if (isnan(frmEnergy[1]) || (frmEnergy[1] > 300)) { //Validating voltage value in case of power off or bigger than expected
     frmEnergy[1] = -3.0;
   }
-  // Serial.println(frmEnergy[1]);
   //If there's no voltage then avoid requesting the rest of variables
   if (frmEnergy[1] == -3.0) {
     frmEnergy[2] = -3.0;
@@ -181,8 +184,7 @@ void pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule, byte busyFlagLocator
     frmEnergy[5] = -3.0;
     frmEnergy[6] = -3.0;
     frmEnergy[7] = 26.10; //I added this one as a personal final element verification in raspberry
-    busyFlagLocator = enabled;
-    //statusArray[busyFlagLocator] = disabled;
+    statusFlagger[busyFlagLocator] = disabled;
     return;
   }
   frmEnergy[2] = pzemModule.power();
@@ -205,15 +207,8 @@ void pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule, byte busyFlagLocator
   if ((isnan(frmEnergy[6])) || (frmEnergy[6] > 2)) { //Validating pf value in case of power off or bigger than expected
     frmEnergy[6] = -3.0;
   }
-  float checkSumFloat = 0.0;
-  for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
-    //Serial.println(frmEnergy[sumIndexer]);
-    checkSumFloat = checkSumFloat + frmEnergy[sumIndexer];
-  }
-  //Serial.println(checkSumFloat);
-  frmEnergy[7] = checkSumFloat; //I added this one as a personal final element verification in raspberry
-  //statusArray[busyFlagLocator] = disabled;
-  busyFlagLocator = enabled;
+  frmEnergy[7] = 0.0; // Will be used for checkSumFloat before serial transmission
+  statusFlagger[busyFlagLocator] = disabled;
 }
 
 byte voltageDetect(float framElement) {
