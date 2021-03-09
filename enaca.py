@@ -168,7 +168,6 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
  else:
   comArdu.close()
   comArdu.open()
-  sleep(.1)
  sumForCheck = sum(ofversion[:7])
  difference = abs(sumForCheck-ofversion[7])
  if (difference>2):
@@ -204,20 +203,17 @@ def readByteArrayInSerial():
    numberStuffs[30]=disabled
    comArdu.close()
    comArdu.open()
-   sleep(.1)
    serialReboots+=1
   if (numberStuffs[30]!=enabled): #This frame cannot be trusted if default enabled status is not received
    statusCleanData=False
    numberStuffs[30]=disabled
    comArdu.close()
    comArdu.open()
-   sleep(.1)
    serialReboots+=1
  else:
   numberStuffs[30]=disabled
   comArdu.close()
   comArdu.open()
-  sleep(.1)
   serialReboots+=1
   statusCleanData=False
  if statusCleanData:
@@ -242,7 +238,6 @@ def checkSerial():
   else:
    comArdu.close()
    comArdu.open()
-   sleep(.1)
    serialReboots+=1
    statusChecking=disabled
    statusCleanData=False
