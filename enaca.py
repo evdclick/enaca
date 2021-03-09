@@ -201,20 +201,20 @@ def readByteArrayInSerial():
   if checkSumTracker != numberStuffs[31]:
    statusCleanData=False
    statusCleanData=False
-   numberStuffs[30]=150
+   numberStuffs[30]=disabled
    comArdu.close()
    comArdu.open()
    sleep(.1)
    serialReboots+=1
   if (numberStuffs[30]!=enabled): #This frame cannot be trusted if default enabled status is not received
    statusCleanData=False
-   numberStuffs[30]=150
+   numberStuffs[30]=disabled
    comArdu.close()
    comArdu.open()
    sleep(.1)
    serialReboots+=1
  else:
-  numberStuffs[30]=150
+  numberStuffs[30]=disabled
   comArdu.close()
   comArdu.open()
   sleep(.1)
@@ -399,7 +399,7 @@ while True:
     indicatorsGroup[4][j]=energyModuleData8[j-8] #indicators axes that belongs to general.... testing purpose
   #Block to read data from external sensors installed in arduino mega
   statusBefore=checkSerial()
-  if statusArray10[30]==180 and statusBefore==enabled:
+  if statusArray10[30]==enabled and statusBefore==enabled:
    comPzemCycler(sensorsModuleData9, latestNormal9, readCommand="i")
    windSpeed=sensorsModuleData9[1] #Delete this as soon as test is finished
 #=======================================================================
