@@ -34,17 +34,12 @@ disabled = 150
 enabled = 180
 
 #Oficially defined and controlled variables for comms and processing
-stArrayComFailures=0 #Detects communication failures when retrieving status array
 serialReboots=0 #Keep counts of serial.open/serial.close
-basicSerialFailures=0 #Keep counts of failures of basic serial int status query
-byteArrayFailures=0 #Keep counts of failures of bytes array query
 outRangeFloats=0 #Keep counts when out of range floats are received
 serialTransactions=0 #Number of times serial queries executed in lines of while loop
 executionsFinished=0 #Keep count of complete program execution
 exceptionsDetected=0 #Keep count of exceptions events detected
 serialExceptionsDetected=0
-incompleteFloatsReception=0
-incompleteByteArrayReception=0
 cleanData=0 #How much serial data request have been received clean data
 windSpeed=0
 execTime=0 #Amount of seconds used to execute complete script
@@ -124,7 +119,6 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
 def comPzemCycler(ofversion, bkpversion, readCommand):
  global serialTransactions
  global outRangeFloats
- global incompleteFloatsReception
  global cleanData
  statusCleanData=True
  serialTransactions+=1
@@ -142,7 +136,6 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
    for unpackElement in incompleteByteSet:
     ofversion[unpackCounter]=(struct.unpack('f',unpackElement))
     unpackCounter+=1
-   incompleteFloatsReception+=1
   else:
    ofversion[0]=struct.unpack('f', byteData[0:4]) #Unpack to float
    ofversion[1]=struct.unpack('f', byteData[4:8]) #Unpack to float
@@ -188,10 +181,8 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
 
 #Function to retrieve array of bytes through serial connection
 def readByteArrayInSerial():
- global byteArrayFailures
  global serialReboots
  global serialTransactions
- global incompleteByteArrayReception
  global cleanData
  statusCleanData=True
  serialTransactions+=1
@@ -209,7 +200,6 @@ def readByteArrayInSerial():
   checkSumTracker=checkSumTracker & (0x00ff)
   if checkSumTracker != numberStuffs[31]:
    statusCleanData=False
-   byteArrayFailures+=1
    statusCleanData=False
    numberStuffs[30]=150
    comArdu.close()
@@ -217,7 +207,6 @@ def readByteArrayInSerial():
    sleep(.1)
    serialReboots+=1
   if (numberStuffs[30]!=enabled): #This frame cannot be trusted if default enabled status is not received
-   byteArrayFailures+=1
    statusCleanData=False
    numberStuffs[30]=150
    comArdu.close()
@@ -229,7 +218,6 @@ def readByteArrayInSerial():
   comArdu.close()
   comArdu.open()
   sleep(.1)
-  incompleteByteArrayReception+=1
   serialReboots+=1
   statusCleanData=False
  if statusCleanData:
@@ -240,7 +228,6 @@ def readByteArrayInSerial():
 
 def checkSerial():
   global serialReboots
-  global basicSerialFailures
   global serialTransactions
   global cleanData
   statusCleanData=True
@@ -251,14 +238,12 @@ def checkSerial():
    statusChecking=ord(statusChecking)
    if statusChecking!=enabled:
     statusChecking=disabled
-    basicSerialFailures+=1
     statusCleanData=False
   else:
    comArdu.close()
    comArdu.open()
    sleep(.1)
    serialReboots+=1
-   basicSerialFailures+=1
    statusChecking=disabled
    statusCleanData=False
   if statusCleanData:
@@ -266,7 +251,6 @@ def checkSerial():
   comArdu.reset_input_buffer()
   comArdu.reset_output_buffer()
   return(statusChecking)
-
 
 #Rising events for flow sensor totalizer input #4
 def counterPlus(channel):
@@ -360,14 +344,12 @@ while True:
   if statusBefore!=enabled:
    comArdu.close()
    comArdu.open()
-   sleep(.1)
    serialReboots+=1
   statusArray10 = readByteArrayInSerial()
   if statusArray10[30]!=enabled:
-   stArrayComFailures+=1
    comArdu.close()
    comArdu.open()
-   sleep(.1)
+   serialReboots+=1
 #===========Retrieve data 8 float array PZEM function Definition =========
 #Check if voltage is ON and there's not busy flag from Arduino Mega
   #Block to read PZEM modules from House
@@ -425,9 +407,9 @@ while True:
   indicatorsGroup[0][0]=executionsFinished #Keep count of complete program execution
   indicatorsGroup[0][1]=serialTransactions #Number of times serial queries executed in lines of while loop
   indicatorsGroup[0][2]=cleanData #Keep count of clean serial queries
-  indicatorsGroup[0][3]=basicSerialFailures #Keep counts of failures of basic serial int status query
-  indicatorsGroup[0][4]=byteArrayFailures #Keep counts of failures of bytes array query
-  indicatorsGroup[0][5]=stArrayComFailures #Detects communication failures when retrieving status array
+  indicatorsGroup[0][3]=0 #available --->basicSerialFailures #Keep counts of failures of basic serial int status query
+  indicatorsGroup[0][4]=0 #available --->byteArrayFailures #Keep counts of failures of bytes array query
+  indicatorsGroup[0][5]=0 #available --->stArrayComFailures #Detects communication failures when retrieving status array
   indicatorsGroup[0][6]=serialReboots #Keep counts of serial.open/serial.close
   indicatorsGroup[0][7]=serialComQuality #Serial communication performance
   indicatorsGroup[0][8]=outRangeFloats #Keep counts when out of range floats are received
@@ -435,8 +417,8 @@ while True:
   indicatorsGroup[0][10]=serialExceptionsDetected
   indicatorsGroup[0][11]=windSpeed
   indicatorsGroup[0][12]=execTime
-  indicatorsGroup[0][13]=incompleteByteArrayReception
-  indicatorsGroup[0][14]=incompleteFloatsReception
+  indicatorsGroup[0][13]=0 #available-->incompleteByteArrayReception
+  indicatorsGroup[0][14]=0 #available--->incompleteFloatsReception
   statusGroup[0][0]=autoIncrementMark #This one will be used to keep track of sequential value from status array
 #MQTT publish launcher--------------------------------------
   for nodeCount in range(len(nodes)): #Whole publish MQTT
