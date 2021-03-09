@@ -35,11 +35,6 @@ unsigned long previousMillis2 = 0;        // will store last time LED was update
 const long interval2 = 7500;           // interval at which to blink (milliseconds)
 //--------------------------
 //===========Energy monitoring's address device is defined with another separate code for using with one at a time
-//PZEM004Tv30 pzemHouseF1(&Serial3, 0x42); //PZEM module for house phase 1
-//PZEM004Tv30 pzemHouseF2(&Serial3, 0x43); //PZEM module for house phase 2
-//PZEM004Tv30 pzemApt1F1(&Serial3, 0x44); //PZEM module for aparment 1 phase 1
-
-
 PZEM004Tv30 pzemBdcst(&Serial3, 0x00); //Broadcast
 PZEM004Tv30 pzemFrameGroup[] = {PZEM004Tv30(&Serial3, 0x42), PZEM004Tv30(&Serial3, 0x43),
                                 PZEM004Tv30(&Serial3, 0x44), PZEM004Tv30(&Serial3, 0x45),
@@ -118,21 +113,13 @@ void serialEvent2() {
   } else if (raspCommand == 'h') {
     pzemPositioner = 7;
   } else if (raspCommand == 'i') {
-    float checkSumFloat = 0.0;
     frameSensors1[0] = 11.07;
-    for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
-      checkSumFloat = checkSumFloat + frameSensors1[sumIndexer];
-    }
-    frameSensors1[7] = checkSumFloat; //I added this one as a personal final element verification in raspberry
+    frameSensors1[7] = checkSumCalculatorF(frameSensors1);
     Serial2.write((byte*) &frameSensors1, floatsToSend * sizeof(float));
     return;
   } else if (raspCommand == 'j') {
     statusArray[29]++;
-    byte checkSumStatus = 0;
-    for (int checkAdder = 0; checkAdder < 31; checkAdder++) {
-      checkSumStatus = checkSumStatus + statusArray[checkAdder];
-    }
-    statusArray[31] = checkSumStatus;
+    statusArray[31] = checkSumCalculatorB(statusArray);
     Serial2.write((byte*)&statusArray, sizeof(statusArray));
     return;
   } else if (raspCommand == 'k') {
@@ -157,12 +144,8 @@ void serialEvent2() {
       fFrameToSerial[indexToSerial] = pzemGroup[pzemPositioner][indexToSerial];
       //Serial.println(fFrameToSerial[indexToSerial]);
     }
-    float checkSumFloat = 0.0;
     fFrameToSerial[0] = 11.07;
-    for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
-      checkSumFloat = checkSumFloat + fFrameToSerial[sumIndexer];
-    }
-    fFrameToSerial[7] = checkSumFloat; //I added this one as a personal final element verification in raspberry
+    fFrameToSerial[7] = checkSumCalculatorF(fFrameToSerial);
     Serial2.write((byte*) &fFrameToSerial, floatsToSend * sizeof(float));
     return;
   }
@@ -211,6 +194,7 @@ void pzemGetter (float frmEnergy[], PZEM004Tv30 pzemModule, byte statusFlagger[]
   statusFlagger[busyFlagLocator] = disabled;
 }
 
+//Function to check if voltage is present in pzem module after frame consulting
 byte voltageDetect(float framElement) {
   if (framElement == -3) {
     return (disabled); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
@@ -218,4 +202,22 @@ byte voltageDetect(float framElement) {
   else {
     return (enabled); //set status bit energyzed in order to be read from raspberry
   }
+}
+
+//Function to calculate checksum in 8float array
+float checkSumCalculatorF (float frameToCalcF[]) {
+  float checkSumFloat = 0.0;
+  for (int sumIndexer = 0; sumIndexer < 7; sumIndexer++) {
+    checkSumFloat = checkSumFloat + frameToCalcF[sumIndexer];
+  }
+  return checkSumFloat;
+}
+
+//Function to calculate checksum in 32byte array
+byte checkSumCalculatorB (byte frameToCalcB[]) {
+  byte checkSumStatus = 0;
+  for (int checkAdder = 0; checkAdder < 31; checkAdder++) {
+    checkSumStatus = checkSumStatus + frameToCalcB[checkAdder];
+  }
+  return checkSumStatus;
 }
