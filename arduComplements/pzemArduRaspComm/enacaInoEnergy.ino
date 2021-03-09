@@ -24,9 +24,10 @@ byte busyIndex = 0; //To ensure arduino mega is not busy before sending float ar
 float frameSensors1[floatsToSend]; //Data frame that belongs to energy monitoring from the apt2
 float frameTransfer[floatsToSend]; //Data frame to be copied from pzem lecture
 float fFrameToSerial[floatsToSend]; //Interchange frame before transfer array of floats to serial port
-float pzemGroup[8][8];  //A testing way to group pzem modules into array of arrays
-float sensorsGroup[12][8];  //A testing way to group sensors modules into array of arrays
+float pzemGroup[8][8];  //Max allowable 2D array size for ardo mega in this case [165][8]
+float sensorsGroup[5][8];  //A testing way to group sensors modules into array of arrays
 byte statusArray[32];
+byte statusArray2[3][32]; //Will be used for redesign purpose status indicador for max 2D pzemGroup max [55][32]
 //--------------------------
 //===========Timing variables defined to scan energy modules according to priority assigned
 unsigned long previousMillis1 = 0;        // will store last time LED was updated
@@ -36,16 +37,12 @@ const long interval2 = 7500;           // interval at which to blink (millisecon
 //--------------------------
 //===========Energy monitoring's address device is defined with another separate code for using with one at a time
 PZEM004Tv30 pzemBdcst(&Serial3, 0x00); //Broadcast
-PZEM004Tv30 pzemFrameGroup[] = {PZEM004Tv30(&Serial3, 0x42), PZEM004Tv30(&Serial3, 0x43),
-                                PZEM004Tv30(&Serial3, 0x44), PZEM004Tv30(&Serial3, 0x45),
-                                PZEM004Tv30(&Serial3, 0x46), PZEM004Tv30(&Serial3, 0x47),
-                                PZEM004Tv30(&Serial3, 0x48), PZEM004Tv30(&Serial3, 0x49)
-                               };
-//--------------------------
+byte pzemFrameGroup[] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49}; //List of pzem addresses in communication bus
+
 void setup() {
   Serial.begin(115200); //This is the speed for serial monitoring
   Serial2.begin(9600);  //Speed for serial comm with raspberry pi through USB Serial FTDI adapter
-  delay(200);
+  delay(50);
   statusArray[30] = enabled; //Status flag to always check serial available
 }
 
@@ -61,12 +58,12 @@ void loop() {
   frameSensors1[5] = windSpeed + 1.1; //Definition pending
   frameSensors1[6] = windSpeed + 1.3; //Definition pending
 
-  //This block is for testing purpose
+  //Firt block of PZEM modules
   if (currentMillis - previousMillis1 >= interval1) {
     previousMillis1 = currentMillis; // save the last time you blinked the LED
     for (int blockFrame1 = 0; blockFrame1 < 4; blockFrame1++) {
-      //pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], busyIndex = blockFrame1 + 8);
-      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray, busyIndex = blockFrame1 + 8);
+      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]);
+      pzemGetter(frameTransfer, pzemM, statusArray, busyIndex = blockFrame1 + 8);
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
         pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
@@ -74,17 +71,19 @@ void loop() {
     }
   }
 
+  //Second block of PZEM modules
   if (currentMillis - previousMillis2 >= interval2) {
     previousMillis2 = currentMillis; // save the last time you blinked the LED
     for (int blockFrame1 = 4; blockFrame1 < 8; blockFrame1++) {
-      //pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], busyIndex = blockFrame1 + 8);
-      pzemGetter(frameTransfer, pzemFrameGroup[blockFrame1], statusArray, busyIndex = blockFrame1 + 8);
+      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]);
+      pzemGetter(frameTransfer, pzemM, statusArray, busyIndex = blockFrame1 + 8);
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
         pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
       }
     }
   }
+
 }//End loop function
 
 //Detect and process command request from raspberry
@@ -128,8 +127,9 @@ void serialEvent2() {
   } else if (raspCommand == 'l') {
     //pzemBdcst.resetEnergy(); //General reset
     for (int resetCycler = 0; resetCycler < sizeof(pzemFrameGroup); resetCycler++) {
+      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[resetCycler]);
       if (statusArray[resetCycler] == enabled) {
-        pzemFrameGroup[resetCycler].resetEnergy();
+        pzemM.resetEnergy();
         statusArray[resetCycler + 16] = enabled;
       }
       else {
