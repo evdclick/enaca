@@ -16,6 +16,31 @@ https://stackoverflow.com/questions/16165488/packing-and-unpacking-binary-float-
 Pyserial documentation
 https://pyserial.readthedocs.io/en/latest/index.html
 
+Catch type and line number in exceptions
+https://stackoverflow.com/questions/1278705/when-i-catch-an-exception-how-do-i-get-the-type-file-and-line-number
+
+function with array parameters in python
+https://stackoverflow.com/questions/11926620/declaring-a-python-function-with-an-array-parameters-and-passing-an-array-argume/11926665
+
+Read 32byte array from arduino in python through serial port
+https://forum.arduino.cc/index.php?topic=617343.0
+
+How to create array of objects in arduino (Useful to package PZEM modules into a simple array for cycling purpose)
+https://forum.arduino.cc/index.php?topic=493909.0
+
+Create array of arrays in Arduino
+https://arduino.stackexchange.com/questions/23926/is-it-possible-to-have-an-array-of-int-arrays/23941
+
+Compare time in python
+https://stackoverflow.com/questions/1831410/how-to-compare-times-in-python
+
+attiny85 as a counter
+https://www.gadgetronicx.com/attiny85-counter-counting-events-signals-interrupts/
+
+attiny85 i2c
+https://playground.arduino.cc/Code/USIi2c/
+https://github.com/rambo/TinyWire/tree/master
+
 Pack sample to pack/unpack array of floats
 a=[21.6,13.1,8,3.4,1.1,2.3,4.5,21.6]
 data=[]
