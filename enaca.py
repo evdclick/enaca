@@ -18,6 +18,7 @@ import time
 import numpy as np
 import random
 from time import sleep
+import traceback
 sys.path.append('./scriptsComm') #Relative path that applies to raspberry
 from topicTide import *
 
@@ -37,16 +38,17 @@ stArrayComFailures=0 #Detects communication failures when retrieving status arra
 serialReboots=0 #Keep counts of serial.open/serial.close
 basicSerialFailures=0 #Keep counts of failures of basic serial int status query
 byteArrayFailures=0 #Keep counts of failures of bytes array query
-powerStatus=enabled #Status flag to check when PZEM has voltage
 outRangeFloats=0 #Keep counts when out of range floats are received
 serialTransactions=0 #Number of times serial queries executed in lines of while loop
-blockSerialQueries=0 #Keep count of serial queries in its block
 executionsFinished=0 #Keep count of complete program execution
 exceptionsDetected=0 #Keep count of exceptions events detected
 serialExceptionsDetected=0
+incompleteFloatsReception=0
+incompleteByteArrayReception=0
+cleanData=0 #How much serial data request have been received clean data
 windSpeed=0
+execTime=0 #Amount of seconds used to execute complete script
 myData = ['A']*8 #Init array of string to receive bytes struct packets
-f_data = [0.0]*8 #Init array of float values to unpack and convert to numpy array
 latestNormal1 = [0.0]*8
 energyModuleData1 = [0.0]*8
 latestNormal2 = [0.0]*8
@@ -120,23 +122,36 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
 
 #Function to upgrade energy module information or some other array of 8 float elements
 def comPzemCycler(ofversion, bkpversion, readCommand):
- global powerStatus
  global serialTransactions
  global outRangeFloats
+ global incompleteFloatsReception
+ global cleanData
+ statusCleanData=True
  serialTransactions+=1
  statusBefore=enabled
+ incompleteArraySet=[-2]*8
+ incompleteByteSet=[]
  if statusBefore==enabled:
   comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
   numberStuffs=[0]*32
   byteData = comArdu.read(32)
-  ofversion[0]=struct.unpack('f', byteData[0:4]) #Unpack to float
-  ofversion[1]=struct.unpack('f', byteData[4:8]) #Unpack to float
-  ofversion[2]=struct.unpack('f', byteData[8:12]) #Unpack to float
-  ofversion[3]=struct.unpack('f', byteData[12:16]) #Unpack to float
-  ofversion[4]=struct.unpack('f', byteData[16:20]) #Unpack to float
-  ofversion[5]=struct.unpack('f', byteData[20:24]) #Unpack to float
-  ofversion[6]=struct.unpack('f', byteData[24:28]) #Unpack to float
-  ofversion[7]=struct.unpack('f', byteData[28:32]) #Unpack to float
+  if len(byteData)<32:
+   for partialElement in incompleteArraySet:
+    incompleteByteSet.append(struct.pack('f',partialElement))
+   unpackCounter=0
+   for unpackElement in incompleteByteSet:
+    ofversion[unpackCounter]=(struct.unpack('f',unpackElement))
+    unpackCounter+=1
+   incompleteFloatsReception+=1
+  else:
+   ofversion[0]=struct.unpack('f', byteData[0:4]) #Unpack to float
+   ofversion[1]=struct.unpack('f', byteData[4:8]) #Unpack to float
+   ofversion[2]=struct.unpack('f', byteData[8:12]) #Unpack to float
+   ofversion[3]=struct.unpack('f', byteData[12:16]) #Unpack to float
+   ofversion[4]=struct.unpack('f', byteData[16:20]) #Unpack to float
+   ofversion[5]=struct.unpack('f', byteData[20:24]) #Unpack to float
+   ofversion[6]=struct.unpack('f', byteData[24:28]) #Unpack to float
+   ofversion[7]=struct.unpack('f', byteData[28:32]) #Unpack to float
   for i in range (0, 8):
    tempTuple =  ofversion[i]
    ofversion[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
@@ -145,11 +160,11 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
    elif (ofversion[i]<0 or ofversion[i]>10000): #Just to check if the number is extremely out of range
     ofversion[i]=bkpversion[i]
     outRangeFloats+=1
+    statusCleanData=False
     continue
    else:
     bkpversion[i]=ofversion[i]
   if (ofversion[1]==-3):
-   powerStatus=disabled
    ofversion[4]=bkpversion[4]
    ofversion[0]=disabled #powerStatus will be in this position for PZEMs
    ofversion[1]=0
@@ -157,12 +172,16 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
    ofversion[3]=0
    ofversion[5]=0
    ofversion[6]=0
-  else:
-   powerStatus=enabled
  else:
   comArdu.close()
+  comArdu.open()
   sleep(.1)
-  comArdu.close()
+ sumForCheck = sum(ofversion[:7])
+ difference = abs(sumForCheck-ofversion[7])
+ if (difference>2):
+  statusCleanData=False
+ if statusCleanData:
+  cleanData+=1
  comArdu.reset_input_buffer()
  comArdu.reset_output_buffer()
  return(ofversion, bkpversion, readCommand)
@@ -172,22 +191,49 @@ def readByteArrayInSerial():
  global byteArrayFailures
  global serialReboots
  global serialTransactions
+ global incompleteByteArrayReception
+ global cleanData
+ statusCleanData=True
  serialTransactions+=1
  numberStuffs=[0]*32
  comArdu.write("j") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
  intData = comArdu.read(32)
- numColector=0
- for byteElement in intData:
-  numberStuffs[numColector]=ord(byteElement)
-  numColector+=1
- if (numberStuffs[31]!=enabled):
-  print("Se reemplaza porque status en trama es: ", numberStuffs[31])
-  byteArrayFailures+=1
-  numberStuffs[31]=150
+ if len(intData)==32:
+  numColector=0
+  checkSumTracker=0
+  for byteElement in intData:
+   numberStuffs[numColector]=ord(byteElement)
+   if numColector<31:
+    checkSumTracker=checkSumTracker+numberStuffs[numColector]
+   numColector+=1
+  checkSumTracker=checkSumTracker & (0x00ff)
+  if checkSumTracker != numberStuffs[31]:
+   statusCleanData=False
+   byteArrayFailures+=1
+   statusCleanData=False
+   numberStuffs[30]=150
+   comArdu.close()
+   comArdu.open()
+   sleep(.1)
+   serialReboots+=1
+  if (numberStuffs[30]!=enabled): #This frame cannot be trusted if default enabled status is not received
+   byteArrayFailures+=1
+   statusCleanData=False
+   numberStuffs[30]=150
+   comArdu.close()
+   comArdu.open()
+   sleep(.1)
+   serialReboots+=1
+ else:
+  numberStuffs[30]=150
   comArdu.close()
-  sleep(.1)
   comArdu.open()
+  sleep(.1)
+  incompleteByteArrayReception+=1
   serialReboots+=1
+  statusCleanData=False
+ if statusCleanData:
+  cleanData+=1
  comArdu.reset_input_buffer()
  comArdu.reset_output_buffer()
  return(numberStuffs)
@@ -196,6 +242,8 @@ def checkSerial():
   global serialReboots
   global basicSerialFailures
   global serialTransactions
+  global cleanData
+  statusCleanData=True
   serialTransactions+=1
   internalComChecker=comArdu.write("k")
   statusChecking=comArdu.read()
@@ -204,13 +252,17 @@ def checkSerial():
    if statusChecking!=enabled:
     statusChecking=disabled
     basicSerialFailures+=1
+    statusCleanData=False
   else:
    comArdu.close()
-   sleep(.1)
    comArdu.open()
+   sleep(.1)
    serialReboots+=1
    basicSerialFailures+=1
    statusChecking=disabled
+   statusCleanData=False
+  if statusCleanData:
+   cleanData+=1
   comArdu.reset_input_buffer()
   comArdu.reset_output_buffer()
   return(statusChecking)
@@ -303,21 +355,23 @@ comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=1)
 #Here the loop starts
 while True:
  try:
+  execIniTime = time.time()
   statusBefore=checkSerial()
   if statusBefore!=enabled:
    comArdu.close()
-   sleep(.1)
    comArdu.open()
+   sleep(.1)
    serialReboots+=1
   statusArray10 = readByteArrayInSerial()
-  if statusArray10[31]==disabled:
+  if statusArray10[30]!=enabled:
    stArrayComFailures+=1
    comArdu.close()
-   sleep(.1)
    comArdu.open()
+   sleep(.1)
 #===========Retrieve data 8 float array PZEM function Definition =========
 #Check if voltage is ON and there's not busy flag from Arduino Mega
   #Block to read PZEM modules from House
+  autoIncrementMark=statusArray10[29]
   statusBefore=checkSerial()
   if (statusArray10[0]==enabled and statusArray10[8]==disabled and statusBefore==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
    comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
@@ -363,15 +417,14 @@ while True:
     indicatorsGroup[4][j]=energyModuleData8[j-8] #indicators axes that belongs to general.... testing purpose
   #Block to read data from external sensors installed in arduino mega
   statusBefore=checkSerial()
-  if statusArray10[31]==180 and statusBefore==enabled:
+  if statusArray10[30]==180 and statusBefore==enabled:
    comPzemCycler(sensorsModuleData9, latestNormal9, readCommand="i")
-   windSpeed=sensorsModuleData9[0] #Delete this as soon as test is finished
+   windSpeed=sensorsModuleData9[1] #Delete this as soon as test is finished
 #=======================================================================
-  blockSerialQueries+=1
-  serialComQuality=(1-(basicSerialFailures+byteArrayFailures+stArrayComFailures+serialReboots+outRangeFloats+serialExceptionsDetected)/serialTransactions)*100
+  serialComQuality=round(((float(cleanData)/float(serialTransactions))*100),2)
   indicatorsGroup[0][0]=executionsFinished #Keep count of complete program execution
   indicatorsGroup[0][1]=serialTransactions #Number of times serial queries executed in lines of while loop
-  indicatorsGroup[0][2]=blockSerialQueries #Keep count of serial queries in its block
+  indicatorsGroup[0][2]=cleanData #Keep count of clean serial queries
   indicatorsGroup[0][3]=basicSerialFailures #Keep counts of failures of basic serial int status query
   indicatorsGroup[0][4]=byteArrayFailures #Keep counts of failures of bytes array query
   indicatorsGroup[0][5]=stArrayComFailures #Detects communication failures when retrieving status array
@@ -381,8 +434,12 @@ while True:
   indicatorsGroup[0][9]=exceptionsDetected #Keep count of exceptions events detected
   indicatorsGroup[0][10]=serialExceptionsDetected
   indicatorsGroup[0][11]=windSpeed
+  indicatorsGroup[0][12]=execTime
+  indicatorsGroup[0][13]=incompleteByteArrayReception
+  indicatorsGroup[0][14]=incompleteFloatsReception
+  statusGroup[0][0]=autoIncrementMark #This one will be used to keep track of sequential value from status array
 #MQTT publish launcher--------------------------------------
-  for nodeCount in range(len(nodes)):
+  for nodeCount in range(len(nodes)): #Whole publish MQTT
    for zoneCount in range(len(zones)):
     for indexCount in range(len(positionsBase)):
      topicPath=nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[0]+'/'+positionsBase[indexCount]
@@ -390,9 +447,11 @@ while True:
      mqttc.publish(topicPath, str(indicatorsGroup[zoneCount][indexCount])) #Publish data loaded from sensor measurement
      topicPath=nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[1]+'/'+positionsBase[indexCount]
      #print(topicPath+'='+str(statusGroup[zoneCount][indexCount])) #This line is only for debugging purpose
-     mqttc.publish(topicPath, str(statusGroup[zoneCount][indexCount]*random.randint(1,15))) #Publish random numbers
+     mqttc.publish(topicPath, str(statusGroup[zoneCount][indexCount])) #Publish random numbers
 #-------------------------------------------------
   executionsFinished+=1
+  execFinTime = time.time()
+  execTime=round((execFinTime-execIniTime),2)
  except KeyboardInterrupt:
   print("Good bye!!!! Test finished manually")
   GPIO.cleanup()
@@ -400,13 +459,15 @@ while True:
  except serial.SerialException as e:
   print("Serial port is unplugged... check connection")
   serialExceptionsDetected+=1
-  continue
+  GPIO.cleanup()
+  quit()
  except Exception as err:
-  print(err)
-  print("Something wrong happended. Please trace code or ask to the author")
+  #print(err)
+  #print("Something wrong happended. Please trace code or ask to the author")
   exceptionsDetected+=1
-  #indicatorsGroup[0][9]=commfails
-  #quit()
+  #print(traceback.format_exc())
   continue
+  #GPIO.cleanup()
+  #quit()
 GPIO.cleanup()
 print("Done")
