@@ -44,25 +44,25 @@ cleanData=0 #How much serial data request have been received clean data
 windSpeed=0
 execTime=0 #Amount of seconds used to execute complete script
 myData = ['A']*8 #Init array of string to receive bytes struct packets
-latestNormal1 = [0.0]*8
-energyModuleData1 = [0.0]*8
-latestNormal2 = [0.0]*8
-energyModuleData2 = [0.0]*8
-latestNormal3 = [0.0]*8
-energyModuleData3 = [0.0]*8
-latestNormal4 = [0.0]*8
-energyModuleData4 = [0.0]*8
-latestNormal5 = [0.0]*8
-energyModuleData5 = [0.0]*8
-latestNormal6 = [0.0]*8
-energyModuleData6 = [0.0]*8
-latestNormal7 = [0.0]*8
-energyModuleData7 = [0.0]*8
-latestNormal8 = [0.0]*8
-energyModuleData8 = [0.0]*8
-latestNormal9 = [0.0]*8
-sensorsModuleData9 = [0.0]*8
-statusArray10 = []*32
+latestNormal1 = [0.0]*8      #List of 8 float to hold bkp data from PZEM House F1
+energyModuleData1 = [0.0]*8  #List of 8 floats to receive data from PZEM House F1
+latestNormal2 = [0.0]*8      #List of 8 float to hold bkp data from PZEM House F2
+energyModuleData2 = [0.0]*8  #List of 8 floats to receive data from PZEM House F2
+latestNormal3 = [0.0]*8      #List of 8 float to hold bkp data from PZEM Apt1 F1
+energyModuleData3 = [0.0]*8  #List of 8 floats to receive data from PZEM Apt1 F1
+latestNormal4 = [0.0]*8      #List of 8 float to hold bkp data from PZEM Apt1 F2
+energyModuleData4 = [0.0]*8  #List of 8 floats to receive data from PZEM Apt1 F2
+latestNormal5 = [0.0]*8      #List of 8 float to hold bkp data from PZEM Apt2 F1
+energyModuleData5 = [0.0]*8  #List of 8 floats to receive data from PZEM Apt2 F1
+latestNormal6 = [0.0]*8      #List of 8 float to hold bkp data from PZEM Apt2 F2
+energyModuleData6 = [0.0]*8  #List of 8 floats to receive data from PZEM Apt2 F2
+latestNormal7 = [0.0]*8      #List of 8 float to hold bkp data from PZEM small business F1
+energyModuleData7 = [0.0]*8  #List of 8 floats to receive data from PZEM small business F1
+latestNormal8 = [0.0]*8      #List of 8 float to hold bkp data from PZEM small business F2
+energyModuleData8 = [0.0]*8  #List of 8 floats to receive data from PZEM small business F2
+latestNormal9 = [0.0]*8      #List of 8 float to hold bkp data from sensors group 1
+sensorsModuleData9 = [0.0]*8 #List of 8 float to receive data from sensors group 1
+statusArray10 = []*32        #List of 32 bytes related to pzem status and others
 
 #counter init values for water consumption
 totalizer = 0
@@ -75,9 +75,6 @@ mqttc = paho.Client()
 host = "192.168.15.102" #Server IP can be selected as you desire
 door = []
 port = 1883 #The one that mosquitto uses
-
-#In case of using i2c display
-initDispT = 1 #Time for displayin message
 
 class bcolors: #To be used for displaying alarms when debugging
  HEADER = '\033[95m'
@@ -92,13 +89,13 @@ class bcolors: #To be used for displaying alarms when debugging
 #Function to explore EVD structure in topicTide.py and execute massive subscription to controls topics
 def on_connect(client, userdata, flags, rc):
  print ("on_connect() " + str(rc))
- for nodeCount in range(len(nodes)):
-  for zoneCount in range(len(zones)):
-   for indexCount in range(len(positionsBase)):
-    topicRouteSubs = nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[2]+'/'+positionsBase[indexCount]
+ for nodeCount in range(len(nodes)): #Get list of nodes
+  for zoneCount in range(len(zones)): #Get list of zones
+   for indexCount in range(len(positionsBase)): #Get number of index according to user needs
+    topicRouteSubs = nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[2]+'/'+positionsBase[indexCount] #Set subscription topic only for controls category
     #print ("Subscribing to: "+ topicRouteSubs) #Uncomment this if you need to see what happend with each control topic before subscription
-    mqttc.subscribe(topicRouteSubs)
- print("Subscription completed for all topics in EVD structure")
+    mqttc.subscribe(topicRouteSubs) #Execute subscription to controls category
+ print("Subscription completed for all topics in EVD structure") #Show confirmation when for loops is complete
 
 def on_subscribe(client, userdata, mid, granted_qos):
  pass #Just in this case to to nothing if subscribe event is receive from the broker
@@ -110,7 +107,7 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
  try: #Firs check if topic exist
   payloadContent = int(msg.payload)
   topicsMap = topic.split('/')
-  door = lookSearch(topicsMap[0], topicsMap[1], topicsMap[2], topicsMap[3])
+  door = lookSearch(topicsMap[0], topicsMap[1], topicsMap[2], topicsMap[3]) #Search for topic location
   controlsGroup[int(door[1])][int(door[3])] = payloadContent
  except: #The idea is to receive control commands as a number
   print("It's not possible. Strings cannot be processed in payload. Only Numbers")
@@ -157,8 +154,8 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
     continue
    else:
     bkpversion[i]=ofversion[i]
-  if (ofversion[1]==-3):
-   ofversion[4]=bkpversion[4]
+  if (ofversion[1]==-3): #Analyze the whole list in case of PZEM for power off condition
+   ofversion[4]=bkpversion[4] #Keep energy consumption info available
    ofversion[0]=disabled #powerStatus will be in this position for PZEMs
    ofversion[1]=0
    ofversion[2]=0
@@ -168,11 +165,11 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
  else:
   comArdu.close()
   comArdu.open()
- sumForCheck = sum(ofversion[:7])
- difference = abs(sumForCheck-ofversion[7])
- if (difference>2):
+ sumForCheck = sum(ofversion[:7]) #Determine check sum from list of data received
+ difference = abs(sumForCheck-ofversion[7]) #Compare their difference with the one calculated in ardu mega
+ if (difference>2): #Don't consider as clean data in case of difference bigger than 2
   statusCleanData=False
- if statusCleanData:
+ if statusCleanData: #If everything is fine, keep counting clean data
   cleanData+=1
  comArdu.reset_input_buffer()
  comArdu.reset_output_buffer()
