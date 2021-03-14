@@ -5,7 +5,7 @@
 # Everyone is permitted to copy and distribute verbatim copies
 # of this license document, but changing it is not allowed.
 #=====================================================
-#run enaca.py as this example:
+#run enaca.py as this example:.
 #nohup python enaca.py >/dev/null 2>&1&
 #Library import in order to make the script works propertly
 import datetime
