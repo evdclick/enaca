@@ -6,17 +6,17 @@
 //of this license document, but changing it is not allowed.
 
 //Enacaino-energy V1.0
-//Last modification 25-feb-2021
+//Last modification 22-mar-2021
 //This code applies for energy monitoring device PZEM-004 V3 with Arduino Mega 2560.
 //Created by: William Jiménez
 
 #include <PZEM004Tv30.h>
 
-byte disabled = 150;
-byte enabled = 180;
+byte disabled = 150; //My own statement for True value in serial transmission
+byte enabled = 180; //My own statement for False value in serial transmission
 
-float windSpeed = 0.00;
-char raspCommand;
+float windSpeed = 0.00; //Variable assignment for windspeed sensor
+char raspCommand; //char command that will be received from raspberry
 byte busyIndex = 0; //To ensure arduino mega is not busy before sending float array from PZEM
 #define floatsToSend 8
 //============Arrays definition to be reported to raspberry through serial connection
@@ -26,26 +26,28 @@ float frameTransfer[floatsToSend]; //Data frame to be copied from pzem lecture
 float fFrameToSerial[floatsToSend]; //Interchange frame before transfer array of floats to serial port
 float pzemGroup[8][8];  //Max allowable 2D array size for ardo mega in this case [165][8]
 float sensorsGroup[5][8];  //A testing way to group sensors modules into array of arrays
-byte statusArray[32];
+byte statusArray[32]; //Under this test for general purpose
 byte statusArray2[3][32]; //Will be used for redesign purpose status indicador for max 2D pzemGroup max [55][32]
 //--------------------------
 //===========Timing variables defined to scan energy modules according to priority assigned
-unsigned long previousMillis1 = 0;        // will store last time LED was updated
-const long interval1 = 1500;           // interval at which to blink (milliseconds)
-unsigned long previousMillis2 = 0;        // will store last time LED was updated
-const long interval2 = 7500;           // interval at which to blink (milliseconds)
+unsigned long previousMillis1 = 0;        // will store last time for priority 1 group
+const long interval1 = 1500;           // interval at which to scan pzem group #1 (milliseconds)
+unsigned long previousMillis2 = 0;        // will store last time for priority 2 group
+const long interval2 = 7500;           // interval at which to scan pzem group #2 (milliseconds)
 //--------------------------
 //===========Energy monitoring's address device is defined with another separate code for using with one at a time
 PZEM004Tv30 pzemBdcst(&Serial3, 0x00); //Broadcast
 byte pzemFrameGroup[] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49}; //List of pzem addresses in communication bus
-
+//Configuration function
 void setup() {
   Serial.begin(115200); //This is the speed for serial monitoring
   Serial2.begin(9600);  //Speed for serial comm with raspberry pi through USB Serial FTDI adapter
   delay(50);
   statusArray[30] = enabled; //Status flag to always check serial available
+  //pzemBdcst.resetEnergy();
 }
 
+//Loop function
 void loop() {
   unsigned long currentMillis = millis();
   windSpeed = (analogRead(A0)); //Read wind speed (0-5V) connected to analog input A0
@@ -60,26 +62,26 @@ void loop() {
 
   //Firt block of PZEM modules
   if (currentMillis - previousMillis1 >= interval1) {
-    previousMillis1 = currentMillis; // save the last time you blinked the LED
+    previousMillis1 = currentMillis; // save the last time you scan this group
     for (int blockFrame1 = 0; blockFrame1 < 4; blockFrame1++) {
-      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]);
-      pzemGetter(frameTransfer, pzemM, statusArray, busyIndex = blockFrame1 + 8);
+      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]); //Define object at specific address according to pzemFrameGroup position
+      pzemGetter(frameTransfer, pzemM, statusArray, busyIndex = blockFrame1 + 8); //Call to upgrade values inside especific pzem module
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
-        pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
+        pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex]; //Trannsfer from 1D array to specifc block in 2D array
       }
     }
   }
 
   //Second block of PZEM modules
   if (currentMillis - previousMillis2 >= interval2) {
-    previousMillis2 = currentMillis; // save the last time you blinked the LED
+    previousMillis2 = currentMillis; // save the last time you scan this group
     for (int blockFrame1 = 4; blockFrame1 < 8; blockFrame1++) {
-      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]);
+      PZEM004Tv30 pzemM (&Serial3, pzemFrameGroup[blockFrame1]); //Define object at specific address according to pzemFrameGroup position
       pzemGetter(frameTransfer, pzemM, statusArray, busyIndex = blockFrame1 + 8);
       statusArray[blockFrame1] = voltageDetect(frameTransfer[1]); //Clear status bit energyzed in order to prevent unnecesary reading from raspberry
       for (int elementIndex = 0; elementIndex < 8; elementIndex++) {
-        pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex];
+        pzemGroup[blockFrame1][elementIndex] = frameTransfer[elementIndex]; //Trannsfer from 1D array to specifc block in 2D array
       }
     }
   }
@@ -89,6 +91,7 @@ void loop() {
 //Detect and process command request from raspberry
 void serialEvent2() {
   raspCommand = (char)Serial2.read(); //A command char received from raspberry
+  //Serial.print("Interrupcion: ");
   //Serial.println(raspCommand);
   bool flagToFloatTransmit = false;
   int pzemPositioner = 0;
@@ -138,11 +141,20 @@ void serialEvent2() {
     }
     Serial2.write(enabled);
     return;
+  } else if (raspCommand == 'r') {
+    byte byteFrame[32];
+    byte indexFr;
+    for (indexFr = 0; indexFr < 32; indexFr++) {
+      delay(2);
+      if (Serial2.available() > 0) {
+        byteFrame[indexFr] = byte(Serial2.read());
+      }
+    }
+    return;
   }
   if (flagToFloatTransmit) {
     for (int indexToSerial = 0; indexToSerial < 8; indexToSerial++) {
       fFrameToSerial[indexToSerial] = pzemGroup[pzemPositioner][indexToSerial];
-      //Serial.println(fFrameToSerial[indexToSerial]);
     }
     fFrameToSerial[0] = 11.07;
     fFrameToSerial[7] = checkSumCalculatorF(fFrameToSerial);
