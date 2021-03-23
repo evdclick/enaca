@@ -112,6 +112,13 @@ def on_message(client, userdata, msg): #This function is about on-screen events 
  except: #The idea is to receive control commands as a number
   print("It's not possible. Strings cannot be processed in payload. Only Numbers")
 
+def writeBytesArray(bytePack, writeCommand):
+ binaryList = bytearray(bytePack)
+ comArdu.write(writeCommand.encode())
+ comArdu.write(binaryList)
+ comArdu.reset_input_buffer()
+ comArdu.reset_output_buffer()
+
 #Function to upgrade energy module information or some other array of 8 float elements
 def comPzemCycler(ofversion, bkpversion, readCommand):
  global serialTransactions
@@ -123,7 +130,7 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
  incompleteArraySet=[-2]*8
  incompleteByteSet=[]
  if statusBefore==enabled:
-  comArdu.write(readCommand) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+  comArdu.write(readCommand.encode()) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
   numberStuffs=[0]*32
   byteData = comArdu.read(32)
   if len(byteData)<32:
@@ -142,9 +149,13 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
    ofversion[5]=struct.unpack('f', byteData[20:24]) #Unpack to float
    ofversion[6]=struct.unpack('f', byteData[24:28]) #Unpack to float
    ofversion[7]=struct.unpack('f', byteData[28:32]) #Unpack to float
+  #ofversion=list(ofversion)
   for i in range (0, 8):
+   #ofversion[i]=round(ofversion[i],2)
    tempTuple =  ofversion[i]
-   ofversion[i] = round(np.array(tempTuple, dtype=float), 2) #Convert the tupple back to numpy array
+   ofversion[i] = np.array(tempTuple, dtype=float) #Convert the tupple back to numpy array
+   ofversion[i]=np.round(ofversion[i], decimals=2)
+   ofversion[i] = float(ofversion[i]) #Numpy Array element back to float to avoid brackets when printing
    if (ofversion[i]==-3): #Check if it was a power off
     continue
    elif (ofversion[i]<0 or ofversion[i]>10000): #Just to check if the number is extremely out of range
@@ -183,13 +194,13 @@ def readByteArrayInSerial():
  statusCleanData=True
  serialTransactions+=1
  numberStuffs=[0]*32
- comArdu.write("j") #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+ comArdu.write('j'.encode()) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
  intData = comArdu.read(32)
  if len(intData)==32:
   numColector=0
   checkSumTracker=0
   for byteElement in intData:
-   numberStuffs[numColector]=ord(byteElement)
+   numberStuffs[numColector]=byteElement #ord(byteElement) implicit
    if numColector<31:
     checkSumTracker=checkSumTracker+numberStuffs[numColector]
    numColector+=1
@@ -225,7 +236,7 @@ def checkSerial():
   global cleanData
   statusCleanData=True
   serialTransactions+=1
-  internalComChecker=comArdu.write("k")
+  internalComChecker=comArdu.write('k'.encode())
   statusChecking=comArdu.read()
   if len(statusChecking)>0:
    statusChecking=ord(statusChecking)
@@ -233,6 +244,7 @@ def checkSerial():
     statusChecking=disabled
     statusCleanData=False
   else:
+   #print(statusChecking)
    comArdu.close()
    comArdu.open()
    serialReboots+=1
@@ -325,12 +337,16 @@ controlsGroup = [list(controlsList),
                  list(controlsList),
                  list(controlsList),
                  list(controlsList)]
-
 #Definition of serial port object, speed and its timeout
+#import serial
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=1)
 #Here the loop starts
 while True:
  try:
+  #This block is for future reference in case of needing to send list of bytes
+  texti=[180]*32
+  writeBytesArray(texti, writeCommand='r')
+  #------------------------
   execIniTime = time.time()
   statusBefore=checkSerial()
   if statusBefore!=enabled:
@@ -436,12 +452,12 @@ while True:
   GPIO.cleanup()
   quit()
  except Exception as err:
-  #print(err)
+  print(err)
   #print("Something wrong happended. Please trace code or ask to the author")
   exceptionsDetected+=1
-  #print(traceback.format_exc())
-  continue
-  #GPIO.cleanup()
-  #quit()
+  print(traceback.format_exc())
+  #continue
+  GPIO.cleanup()
+  quit()
 GPIO.cleanup()
 print("Done")
