@@ -256,6 +256,14 @@ def checkSerial():
   comArdu.reset_output_buffer()
   return(statusChecking)
 
+#Calculate checksum from a given byte array of all elements except last one
+def checkSumByteSender(byteList):
+ checkSumByteSolver=0
+ for byteElement in range(len(byteList)-1):
+  checkSumByteSolver=checkSumByteSolver + byteList[byteElement]
+ checkSumByteSolver=checkSumByteSolver & (0x00ff)
+ return(checkSumByteSolver)
+
 #Rising events for flow sensor totalizer input #4
 def counterPlus(channel):
  global totalizer
@@ -345,7 +353,8 @@ while True:
  try:
   #This block is for future reference in case of needing to send list of bytes
   texti=[180]*32
-  writeBytesArray(texti, writeCommand='r')
+  texti[31]=checkSumByteSender(texti) #Simple test to calculate checksum
+  writeBytesArray(texti, writeCommand='r') #Then send byte array
   #------------------------
   execIniTime = time.time()
   statusBefore=checkSerial()
