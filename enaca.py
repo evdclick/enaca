@@ -43,7 +43,10 @@ serialExceptionsDetected=0
 cleanData=0 #How much serial data request have been received clean data
 windSpeed=0
 execTime=0 #Amount of seconds used to execute complete script
+kWprice=480 #kWh price value for energy consumption
+kWpriceIntern=850 #kWh price value for energy consumption
 myData = ['A']*8 #Init array of string to receive bytes struct packets
+#############################Start of 3D block implementation for future try
 latestNormal1 = [0.0]*8      #List of 8 float to hold bkp data from PZEM House F1
 energyModuleData1 = [0.0]*8  #List of 8 floats to receive data from PZEM House F1
 latestNormal2 = [0.0]*8      #List of 8 float to hold bkp data from PZEM House F2
@@ -60,9 +63,17 @@ latestNormal7 = [0.0]*8      #List of 8 float to hold bkp data from PZEM small b
 energyModuleData7 = [0.0]*8  #List of 8 floats to receive data from PZEM small business F1
 latestNormal8 = [0.0]*8      #List of 8 float to hold bkp data from PZEM small business F2
 energyModuleData8 = [0.0]*8  #List of 8 floats to receive data from PZEM small business F2
+latestNormal50 = [0.0]*8      #List of 8 float to hold bkp data from PZEM A/C V1
+energyModuleData50 = [0.0]*8  #List of 8 floats to receive data from PZEM A/C V1
+latestNormal51 = [0.0]*8      #List of 8 float to hold bkp data from PZEM A/C V2
+energyModuleData51 = [0.0]*8  #List of 8 floats to receive data from PZEM A/C V2
+##############################This block can be packed in a 3D array, but actually not implemented
+
 latestNormal9 = [0.0]*8      #List of 8 float to hold bkp data from sensors group 1
 sensorsModuleData9 = [0.0]*8 #List of 8 float to receive data from sensors group 1
 statusArray10 = []*32        #List of 32 bytes related to pzem status and others
+cmdAndStatusFromRasp1=[180]*32 #List of 32 bytes related to command and status from raspberry to Mega
+
 
 #counter init values for water consumption
 totalizer = 0
@@ -349,12 +360,16 @@ controlsGroup = [list(controlsList),
 #import serial
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=1)
 #Here the loop starts
+cmdAndStatusFromRasp1[24]=disabled
+statusArray10=[180]*32
+statusArray10[28]=enabled
 while True:
  try:
-  #This block is for future reference in case of needing to send list of bytes
-  texti=[180]*32
-  texti[31]=checkSumByteSender(texti) #Simple test to calculate checksum
-  writeBytesArray(texti, writeCommand='r') #Then send byte array
+  #List of bytes and status commands to Arduino Mega in order to execute
+  #specific instructions according to table specs in excel profile and
+  #certain descriptions within lines in this code
+  cmdAndStatusFromRasp1[31]=checkSumByteSender(cmdAndStatusFromRasp1) #Simple test to calculate checksum
+  writeBytesArray(cmdAndStatusFromRasp1, writeCommand='r') #Then send byte array
   #------------------------
   execIniTime = time.time()
   statusBefore=checkSerial()
@@ -372,48 +387,74 @@ while True:
   #Block to read PZEM modules from House
   autoIncrementMark=statusArray10[29]
   statusBefore=checkSerial()
-  if (statusArray10[0]==enabled and statusArray10[8]==disabled and statusBefore==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
+  ##Remeber that serialEvent1 in Arduino has a condition to identify when to send float array and must be partially config
+  if (statusArray10[0]==enabled and statusArray10[16]==disabled and statusBefore==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
    comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
    for j in range (0,8):
     indicatorsGroup[1][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
-  if (statusArray10[1]==enabled and statusArray10[9]==disabled and statusBefore==enabled) or (statusArray10[1]==disabled and energyModuleData2[1]>0):
+  if (statusArray10[1]==enabled and statusArray10[17]==disabled and statusBefore==enabled) or (statusArray10[1]==disabled and energyModuleData2[1]>0):
    comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
    for j in range (8,16):
     indicatorsGroup[1][j]=energyModuleData2[j-8] #indicators axes that belongs to general.... testing purpose
   #Block to read PZEM modules from Apartment1
   statusBefore=checkSerial()
-  if (statusArray10[2]==enabled and statusArray10[10]==disabled and statusBefore==enabled) or (statusArray10[2]==disabled and energyModuleData3[1]>0):
+  if (statusArray10[2]==enabled and statusArray10[18]==disabled and statusBefore==enabled) or (statusArray10[2]==disabled and energyModuleData3[1]>0):
    comPzemCycler(energyModuleData3, latestNormal3, readCommand="c")
    for j in range (0,8):
     indicatorsGroup[2][j]=energyModuleData3[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
-  if (statusArray10[3]==enabled and statusArray10[11]==disabled and statusBefore==enabled) or (statusArray10[3]==disabled and energyModuleData4[1]>0):
+  if (statusArray10[3]==enabled and statusArray10[19]==disabled and statusBefore==enabled) or (statusArray10[3]==disabled and energyModuleData4[1]>0):
    comPzemCycler(energyModuleData4, latestNormal4, readCommand="d")
    for j in range (8,16):
     indicatorsGroup[2][j]=energyModuleData4[j-8] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[2][16]=round(indicatorsGroup[2][4]+indicatorsGroup[2][12],1) #Asign sum of energy
+   indicatorsGroup[2][17]=int(indicatorsGroup[2][16]*kWprice) #Asign paying bill value
+   indicatorsGroup[2][18]=round(indicatorsGroup[2][2]+indicatorsGroup[2][10],1) #Asign sum of instant power
   #Block to read PZEM modules from Apartment2
   statusBefore=checkSerial()
-  if (statusArray10[4]==enabled and statusArray10[12]==disabled and statusBefore==enabled) or (statusArray10[4]==disabled and energyModuleData5[1]>0):
+  if (statusArray10[4]==enabled and statusArray10[20]==disabled and statusBefore==enabled) or (statusArray10[4]==disabled and energyModuleData5[1]>0):
    comPzemCycler(energyModuleData5, latestNormal5, readCommand="e")
    for j in range (0,8):
     indicatorsGroup[3][j]=energyModuleData5[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
-  if (statusArray10[5]==enabled and statusArray10[13]==disabled and statusBefore==enabled) or (statusArray10[5]==disabled and energyModuleData6[1]>0):
+  if (statusArray10[5]==enabled and statusArray10[21]==disabled and statusBefore==enabled) or (statusArray10[5]==disabled and energyModuleData6[1]>0):
    comPzemCycler(energyModuleData6, latestNormal6, readCommand="f")
    for j in range (8,16):
     indicatorsGroup[3][j]=energyModuleData6[j-8] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[3][16]=round(indicatorsGroup[3][4]+indicatorsGroup[3][12],1) #Asign sum of energy
+   indicatorsGroup[3][17]=int(indicatorsGroup[3][16]*kWprice) #Asign paying bill value
+   indicatorsGroup[3][18]=round(indicatorsGroup[3][2]+indicatorsGroup[3][10],1) #Asign sum of instant power
   #Block to read PZEM modules from Mini Local
   statusBefore=checkSerial()
-  if (statusArray10[6]==enabled and statusArray10[14]==disabled and statusBefore==enabled) or (statusArray10[6]==disabled and energyModuleData7[1]>0):
+  if (statusArray10[6]==enabled and statusArray10[22]==disabled and statusBefore==enabled) or (statusArray10[6]==disabled and energyModuleData7[1]>0):
    comPzemCycler(energyModuleData7, latestNormal7, readCommand="g")
    for j in range (0,8):
     indicatorsGroup[4][j]=energyModuleData7[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
-  if (statusArray10[7]==enabled and statusArray10[15]==disabled and statusBefore==enabled) or (statusArray10[7]==disabled and energyModuleData8[1]>0):
+  if (statusArray10[7]==enabled and statusArray10[23]==disabled and statusBefore==enabled) or (statusArray10[7]==disabled and energyModuleData8[1]>0):
    comPzemCycler(energyModuleData8, latestNormal8, readCommand="h")
    for j in range (8,16):
     indicatorsGroup[4][j]=energyModuleData8[j-8] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[4][16]=round(indicatorsGroup[4][4]+indicatorsGroup[4][12],1) #Asign sum of energy
+   indicatorsGroup[4][17]=int(indicatorsGroup[4][16]*kWpriceIntern) #Asign paying bill value
+   indicatorsGroup[4][18]=round(indicatorsGroup[4][2]+indicatorsGroup[4][10],1) #Asign sum of instant power
+
+#------------Leave this block alone to retrieve PZEM A/C data testing purposes
+  statusBefore=checkSerial()
+  if (statusArray10[8]==enabled and statusArray10[24]==disabled and statusBefore==enabled) or (statusArray10[8]==disabled and energyModuleData50[1]>0):
+   comPzemCycler(energyModuleData50, latestNormal50, readCommand="y")
+   for j in range (32,40):
+    indicatorsGroup[2][j]=energyModuleData50[j-32] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[2][40]=int(indicatorsGroup[2][36]*kWpriceIntern) #Asign paying bill value   
+  statusBefore=checkSerial()
+  if (statusArray10[9]==enabled and statusArray10[25]==disabled and statusBefore==enabled) or (statusArray10[9]==disabled and energyModuleData51[1]>0):
+   comPzemCycler(energyModuleData51, latestNormal51, readCommand="z")
+   for j in range (32,40):                         #next must be j-32 or start of range
+    indicatorsGroup[3][j]=energyModuleData51[j-32] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[3][40]=int(indicatorsGroup[3][36]*kWpriceIntern) #Asign paying bill value   
+#-------------END BLOCK
+
   #Block to read data from external sensors installed in arduino mega
   statusBefore=checkSerial()
   if statusArray10[30]==enabled and statusBefore==enabled:
@@ -424,6 +465,11 @@ while True:
   indicatorsGroup[0][0]=executionsFinished #Keep count of complete program execution
   indicatorsGroup[0][1]=serialTransactions #Number of times serial queries executed in lines of while loop
   indicatorsGroup[0][2]=cleanData #Keep count of clean serial queries
+  #Don't let this number get too high... it's stable and no need for that long
+  if serialTransactions>=100000:
+   serialTransactions=0
+   cleanData=0
+   executionsFinished=0
   indicatorsGroup[0][3]=0 #available --->basicSerialFailures #Keep counts of failures of basic serial int status query
   indicatorsGroup[0][4]=0 #available --->byteArrayFailures #Keep counts of failures of bytes array query
   indicatorsGroup[0][5]=0 #available --->stArrayComFailures #Detects communication failures when retrieving status array
@@ -436,7 +482,28 @@ while True:
   indicatorsGroup[0][12]=execTime
   indicatorsGroup[0][13]=0 #available-->incompleteByteArrayReception
   indicatorsGroup[0][14]=0 #available--->incompleteFloatsReception
+  indicatorsGroup[1][17]= round(indicatorsGroup[1][3]-indicatorsGroup[1][11],1) #Temp purpose for Delta I in mains 220V phase-N
   statusGroup[0][0]=autoIncrementMark #This one will be used to keep track of sequential value from status array
+  
+  today = datetime.datetime.today() #Take a look for recent date and time value
+  refDay=int(today.strftime("%d"))
+  refHour=int(today.strftime("%H"))
+  refMinute=int(today.strftime("%M"))
+  #Send if necesary during firs minute of month a general reset energy command
+  if refDay==1 and refHour==0 and refMinute==0 and statusArray10[28]==disabled:
+   cmdAndStatusFromRasp1[24]=enabled
+  #clear if necesary during second minute of month a general reset energy command
+  if refDay==1 and refHour==0 and refMinute==1 and statusArray10[28]==enabled:
+   cmdAndStatusFromRasp1[24]=disabled
+  
+  if controlsGroup[0][0] == enabled:
+   comArdu.write('l'.encode())
+   time.sleep(3)
+   controlsGroup[0][0] = disabled
+  if controlsGroup[0][1] == enabled:
+   comArdu.write('m'.encode()) #Temp command to switch ON rain pump some minutes
+   controlsGroup[0][1] = disabled
+
 #MQTT publish launcher--------------------------------------
   for nodeCount in range(len(nodes)): #Whole publish MQTT
    for zoneCount in range(len(zones)):
