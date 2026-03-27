@@ -5,6 +5,7 @@
 # Everyone is permitted to copy and distribute verbatim copies
 # of this license document, but changing it is not allowed.
 #=====================================================
+#Last modification: 2026-02-04
 #run enaca.py as this example:.
 #nohup python enaca.py >/dev/null 2>&1&
 #Library import in order to make the script works propertly
@@ -15,6 +16,7 @@ import serial
 import sys
 import struct
 import time
+import schedule #To be used as schedule for timed events
 import numpy as np
 import random
 from time import sleep
@@ -33,6 +35,12 @@ GPIO.setup(25, GPIO.IN)
 disabled = 150
 enabled = 180
 
+#Variables for scheduling events
+flagEach5Minute01=False
+flagEachHour01=False
+flagEachDay01=False
+flagEachEndDay01=False
+
 #Oficially defined and controlled variables for comms and processing
 serialReboots=0 #Keep counts of serial.open/serial.close
 outRangeFloats=0 #Keep counts when out of range floats are received
@@ -43,9 +51,8 @@ serialExceptionsDetected=0
 cleanData=0 #How much serial data request have been received clean data
 windSpeed=0
 execTime=0 #Amount of seconds used to execute complete script
-kWprice=480 #kWh price value for energy consumption
-kWpriceIntern=850 #kWh price value for energy consumption
-myData = ['A']*8 #Init array of string to receive bytes struct packets
+countBackForReset=disabled
+# IF NOT USED, DELETE... myData = ['A']*8 #Init array of string to receive bytes struct packets
 #############################Start of 3D block implementation for future try
 latestNormal1 = [0.0]*8      #List of 8 float to hold bkp data from PZEM House F1
 energyModuleData1 = [0.0]*8  #List of 8 floats to receive data from PZEM House F1
@@ -72,6 +79,7 @@ energyModuleData51 = [0.0]*8  #List of 8 floats to receive data from PZEM A/C V2
 latestNormal9 = [0.0]*8      #List of 8 float to hold bkp data from sensors group 1
 sensorsModuleData9 = [0.0]*8 #List of 8 float to receive data from sensors group 1
 statusArray10 = []*32        #List of 32 bytes related to pzem status and others
+statusArray11 = []*32        #List of 32 bytes related to pzem status and others
 cmdAndStatusFromRasp1=[180]*32 #List of 32 bytes related to command and status from raspberry to Mega
 
 
@@ -97,31 +105,26 @@ class bcolors: #To be used for displaying alarms when debugging
  BOLD = '\033[1m'
  UNDERLINE = '\033[4m'
 
-#Function to explore EVD structure in topicTide.py and execute massive subscription to controls topics
-def on_connect(client, userdata, flags, rc):
- print ("on_connect() " + str(rc))
- for nodeCount in range(len(nodes)): #Get list of nodes
-  for zoneCount in range(len(zones)): #Get list of zones
-   for indexCount in range(len(positionsBase)): #Get number of index according to user needs
-    topicRouteSubs = nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[2]+'/'+positionsBase[indexCount] #Set subscription topic only for controls category
-    #print ("Subscribing to: "+ topicRouteSubs) #Uncomment this if you need to see what happend with each control topic before subscription
-    mqttc.subscribe(topicRouteSubs) #Execute subscription to controls category
- print("Subscription completed for all topics in EVD structure") #Show confirmation when for loops is complete
+#print("Por aquí no vuelvo a pasar")
+#Group of functions for scheduling events
+def schTask1():
+ global flagEach5Minute01
+ flagEach5Minute01=True
+ return
+def schTask2():
+ global flagEachHour01
+ flagEachHour01=True
+ return
+def schTask3():
+ global flagEachDay01
+ flagEachDay01=True
+ return
+def schTask4():
+ global flagEachEndDay01
+ flagEachEndDay01=True
+ return
+#----------------------------------------------
 
-def on_subscribe(client, userdata, mid, granted_qos):
- pass #Just in this case to to nothing if subscribe event is receive from the broker
- #print("Successful subscribed") #If you need confirmation for each subscribed topic in console uncomment this line
-
-def on_message(client, userdata, msg): #This function is about on-screen events after receiving controls topics
- print("\n on_message() topic: "+msg.topic+"\n payload: "+str(msg.payload)+"\n")
- topic = msg.topic
- try: #Firs check if topic exist
-  payloadContent = int(msg.payload)
-  topicsMap = topic.split('/')
-  door = lookSearch(topicsMap[0], topicsMap[1], topicsMap[2], topicsMap[3]) #Search for topic location
-  controlsGroup[int(door[1])][int(door[3])] = payloadContent
- except: #The idea is to receive control commands as a number
-  print("It's not possible. Strings cannot be processed in payload. Only Numbers")
 
 def writeBytesArray(bytePack, writeCommand):
  binaryList = bytearray(bytePack)
@@ -129,6 +132,7 @@ def writeBytesArray(bytePack, writeCommand):
  comArdu.write(binaryList)
  comArdu.reset_input_buffer()
  comArdu.reset_output_buffer()
+ return
 
 #Function to upgrade energy module information or some other array of 8 float elements
 def comPzemCycler(ofversion, bkpversion, readCommand):
@@ -198,14 +202,14 @@ def comPzemCycler(ofversion, bkpversion, readCommand):
  return(ofversion, bkpversion, readCommand)
 
 #Function to retrieve array of bytes through serial connection
-def readByteArrayInSerial():
+def readByteArrayInSerial(charCommand):
  global serialReboots
  global serialTransactions
  global cleanData
  statusCleanData=True
  serialTransactions+=1
  numberStuffs=[0]*32
- comArdu.write('j'.encode()) #Keyword used to be sure about what is expected to receive energy data from specific pzem module
+ comArdu.write(charCommand.encode()) #Keyword used to be sure about what is expected to receive from raspberry
  intData = comArdu.read(32)
  if len(intData)==32:
   numColector=0
@@ -239,6 +243,7 @@ def readByteArrayInSerial():
   cleanData+=1
  comArdu.reset_input_buffer()
  comArdu.reset_output_buffer()
+ arraySet=numberStuffs
  return(numberStuffs)
 
 def checkSerial():
@@ -247,7 +252,7 @@ def checkSerial():
   global cleanData
   statusCleanData=True
   serialTransactions+=1
-  internalComChecker=comArdu.write('k'.encode())
+  internalComChecker=comArdu.write('l'.encode())
   statusChecking=comArdu.read()
   if len(statusChecking)>0:
    statusChecking=ord(statusChecking)
@@ -322,14 +327,6 @@ GPIO.add_event_detect(23, GPIO.RISING, callback=counterPlus1, bouncetime=3)
 GPIO.add_event_detect(24, GPIO.RISING, callback=counterPlus2, bouncetime=3)
 GPIO.add_event_detect(25, GPIO.RISING, callback=counterPlus3, bouncetime=3)
 
-mqttc.on_connect = on_connect
-mqttc.on_subscribe = on_subscribe
-mqttc.on_message = on_message
-
-print("connecting to: "+host)
-mqttc.connect(host, port, 60)
-mqttc.loop_start()
-
 indicatorList = []
 statusList = []
 controlsList = []
@@ -343,7 +340,7 @@ indicatorsGroup = [list(indicatorList),
                    list(indicatorList),
                    list(indicatorList),
                    list(indicatorList),
-                   list(indicatorList),]
+                   list(indicatorList)]
 
 statusGroup = [list(statusList),
                list(statusList),
@@ -360,16 +357,95 @@ controlsGroup = [list(controlsList),
 #import serial
 comArdu = serial.Serial("/dev/ttyUSB0", baudrate=9600, timeout=1)
 #Here the loop starts
-cmdAndStatusFromRasp1[24]=disabled
+for flagInitReset in range(12):
+ cmdAndStatusFromRasp1[flagInitReset]=disabled
 statusArray10=[180]*32
 statusArray10[28]=enabled
+statusArray11=[180]*32
+
+#Scheduling init and process
+#https://medium.com/@istuti.mce21/schedule-python-03d689d07b00
+kWpricel=[0,680,505,505,1000]
+alter1Before=[0,0,0,0,0]
+alter1Now=[0,0,0,0,0]
+alter2Before=[0,0,0,0,0]
+alter2Now=[0,0,0,0,0]
+moneyAcLimit=-1000
+schedule.every(5).minutes.do(schTask1) #Time for data collection has been set to 5 in order to keep file not that large
+schedule.every().hour.at(":00").do(schTask2)
+schedule.every().day.at("00:01").do(schTask3)
+schedule.every().day.at("23:59").do(schTask4)
+
+#MQTT profile
+#Function to explore EVD structure in topicTide.py and execute massive subscription to controls topics
+def on_connect(client, userdata, flags, rc):
+ for nodeCount in range(len(nodes)): #Get list of nodes #THIS LINE WAS BEFORE FOR TESTING # print ("on_connect() " + str(rc))
+  for zoneCount in range(len(zones)): #Get list of zones
+   for indexCount in range(len(positionsBase)): #Get number of index according to user needs
+    topicRouteSubs = nodes[nodeCount]+'/'+zones[zoneCount]+'/'+category[2]+'/'+positionsBase[indexCount] #Set subscription topic only for controls category
+    #print ("Subscribing to: "+ topicRouteSubs) #Uncomment this if you need to see what happend with each control topic before subscription
+    mqttc.subscribe(topicRouteSubs) #Execute subscription to controls category
+ print("Subscription completed for all topics in EVD structure") #Show confirmation when for loops is complete
+
+def on_subscribe(client, userdata, mid, granted_qos):
+ pass #Just in this case to to nothing if subscribe event is receive from the broker
+ #print("Successful subscribed") #If you need confirmation for each subscribed topic in console uncomment this line
+
+def on_message(client, userdata, msg): #This function is about on-screen events after receiving controls topics
+ topic = msg.topic #THIS LINE WAS BEFORE FOR TESTING PURPOSE  #print("\n on_message() topic: "+msg.topic+"\n payload: "+str(msg.payload)+"\n")
+ try: #Firs check if topic exist
+  payloadContent = int(msg.payload)
+  topicsMap = topic.split('/')
+  door = lookSearch(topicsMap[0], topicsMap[1], topicsMap[2], topicsMap[3]) #Search for topic location
+  controlsGroup[int(door[1])][int(door[3])] = payloadContent
+ except: #The idea is to receive control commands as a number
+  print("It's not possible. Strings cannot be processed in payload. Only Numbers")
+
+mqttc.on_connect = on_connect
+mqttc.on_subscribe = on_subscribe
+mqttc.on_message = on_message
+#print("connecting to: "+host)
+mqttc.connect(host, port, 60)
+mqttc.loop_start()
 while True:
  try:
+  if controlsGroup[1][3] == enabled: #Individual request to zero Main PZEM
+    cmdAndStatusFromRasp1[0]=enabled
+    cmdAndStatusFromRasp1[1]=enabled
+    controlsGroup[1][3] = disabled
+  if controlsGroup[2][3] == enabled: #Individual request to zero V1 PZEM
+    cmdAndStatusFromRasp1[2]=enabled
+    cmdAndStatusFromRasp1[3]=enabled
+    controlsGroup[2][3] = disabled
+  if controlsGroup[3][3] == enabled: #Individual request to zero V2 PZEM
+    cmdAndStatusFromRasp1[4]=enabled
+    cmdAndStatusFromRasp1[5]=enabled
+    controlsGroup[3][3] = disabled    
+  if controlsGroup[4][3] == enabled: #Individual request to zero SmallBusiness PZEM
+    cmdAndStatusFromRasp1[6]=enabled
+    cmdAndStatusFromRasp1[7]=enabled
+    controlsGroup[4][3] = disabled
+  if controlsGroup[2][0] == enabled and statusArray11[8]==disabled: #Solicitud para poner a cero medidor de energía A/C V1
+   cmdAndStatusFromRasp1[8]=enabled
+   controlsGroup[2][0] = disabled
+  if controlsGroup[3][0] == enabled and statusArray11[9]==disabled: #Solicitud para poner a cero medidor de energía A/C V2
+   cmdAndStatusFromRasp1[9]=enabled
+   controlsGroup[3][0] = disabled  
+  if controlsGroup[2][2] == enabled:
+   cmdAndStatusFromRasp1[10]=enabled #SET A/C V1 Via MQTT
+  else:
+   cmdAndStatusFromRasp1[10]=disabled
+  if controlsGroup[3][2] == enabled:
+   cmdAndStatusFromRasp1[11]=enabled #SET A/C V2 Via MQTT
+  else:
+   cmdAndStatusFromRasp1[11]=disabled   
+  cmdAndStatusFromRasp1[31]=checkSumByteSender(cmdAndStatusFromRasp1) #Simple test to calculate checksum
   #List of bytes and status commands to Arduino Mega in order to execute
   #specific instructions according to table specs in excel profile and
   #certain descriptions within lines in this code
-  cmdAndStatusFromRasp1[31]=checkSumByteSender(cmdAndStatusFromRasp1) #Simple test to calculate checksum
-  writeBytesArray(cmdAndStatusFromRasp1, writeCommand='r') #Then send byte array
+  writeBytesArray(cmdAndStatusFromRasp1, writeCommand='u') #Then send byte array
+  for globalFlagReset in range(10): 
+   cmdAndStatusFromRasp1[globalFlagReset]=disabled #Setting back global reset to normal  
   #------------------------
   execIniTime = time.time()
   statusBefore=checkSerial()
@@ -377,88 +453,124 @@ while True:
    comArdu.close()
    comArdu.open()
    serialReboots+=1
-  statusArray10 = readByteArrayInSerial()
+  statusArray11=readByteArrayInSerial(charCommand='y')
+  statusArray10=readByteArrayInSerial(charCommand='z') 
+  #0.4seg
+#Partially isolated block
   if statusArray10[30]!=enabled:
    comArdu.close()
    comArdu.open()
    serialReboots+=1
+#=======
 #===========Retrieve data 8 float array PZEM function Definition =========
 #Check if voltage is ON and there's not busy flag from Arduino Mega
   #Block to read PZEM modules from House
+  with open('saldoAC.txt') as batchPayedAC:
+   lotePrepagoAC=batchPayedAC.readlines()
+   if len(lotePrepagoAC)==2:
+    indicatorsGroup[2][41]=int(lotePrepagoAC[0])
+    indicatorsGroup[3][41]=int(lotePrepagoAC[1])  
   autoIncrementMark=statusArray10[29]
   statusBefore=checkSerial()
+  #0.5 a 1.1seg
   ##Remeber that serialEvent1 in Arduino has a condition to identify when to send float array and must be partially config
-  if (statusArray10[0]==enabled and statusArray10[16]==disabled and statusBefore==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
-   comPzemCycler(energyModuleData1, latestNormal1, readCommand="a")
-   for j in range (0,8):
-    indicatorsGroup[1][j]=energyModuleData1[j] #indicators axes that belongs to general.... testing purpose
-  statusBefore=checkSerial()
+  #Block te read PZEM Modeules from main feed. Ni idea sobre el motivo pero fue necesario comenzar por la letra 'b'
   if (statusArray10[1]==enabled and statusArray10[17]==disabled and statusBefore==enabled) or (statusArray10[1]==disabled and energyModuleData2[1]>0):
-   comPzemCycler(energyModuleData2, latestNormal2, readCommand="b")
+   comPzemCycler(energyModuleData2, latestNormal2, readCommand='b')
    for j in range (8,16):
     indicatorsGroup[1][j]=energyModuleData2[j-8] #indicators axes that belongs to general.... testing purpose
+   indicatorsGroup[1][16]=round(indicatorsGroup[1][4]+indicatorsGroup[1][12],1) #Asign sum of energy
+   indicatorsGroup[1][17]=int(indicatorsGroup[1][16]*kWpricel[1]) #Asign paying bill value
+   indicatorsGroup[1][18]=round(indicatorsGroup[1][2]+indicatorsGroup[1][10],1) #Asign sum of instant power
+   indicatorsGroup[1][19]=int((indicatorsGroup[1][18]/1000)*kWpricel[1]) #Asign money for instant power
+  if (statusArray10[0]==enabled and statusArray10[16]==disabled and statusBefore==enabled) or (statusArray10[0]==disabled and energyModuleData1[1]>0):
+   comPzemCycler(energyModuleData1, latestNormal1, readCommand='a')
+   for j in range (0,8):
+    indicatorsGroup[1][j]=energyModuleData1[j] #indicators axes that belongs to main feed
+  statusBefore=checkSerial()
   #Block to read PZEM modules from Apartment1
   statusBefore=checkSerial()
   if (statusArray10[2]==enabled and statusArray10[18]==disabled and statusBefore==enabled) or (statusArray10[2]==disabled and energyModuleData3[1]>0):
-   comPzemCycler(energyModuleData3, latestNormal3, readCommand="c")
+   comPzemCycler(energyModuleData3, latestNormal3, readCommand='c')
    for j in range (0,8):
     indicatorsGroup[2][j]=energyModuleData3[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
   if (statusArray10[3]==enabled and statusArray10[19]==disabled and statusBefore==enabled) or (statusArray10[3]==disabled and energyModuleData4[1]>0):
-   comPzemCycler(energyModuleData4, latestNormal4, readCommand="d")
+   comPzemCycler(energyModuleData4, latestNormal4, readCommand='d')
    for j in range (8,16):
     indicatorsGroup[2][j]=energyModuleData4[j-8] #indicators axes that belongs to general.... testing purpose
    indicatorsGroup[2][16]=round(indicatorsGroup[2][4]+indicatorsGroup[2][12],1) #Asign sum of energy
-   indicatorsGroup[2][17]=int(indicatorsGroup[2][16]*kWprice) #Asign paying bill value
+   indicatorsGroup[2][17]=int(indicatorsGroup[2][16]*kWpricel[2]) #Asign paying bill value
    indicatorsGroup[2][18]=round(indicatorsGroup[2][2]+indicatorsGroup[2][10],1) #Asign sum of instant power
+   indicatorsGroup[2][19]=round((indicatorsGroup[2][18]/1000)*kWpricel[2]) #Asign money for instant power
   #Block to read PZEM modules from Apartment2
   statusBefore=checkSerial()
   if (statusArray10[4]==enabled and statusArray10[20]==disabled and statusBefore==enabled) or (statusArray10[4]==disabled and energyModuleData5[1]>0):
-   comPzemCycler(energyModuleData5, latestNormal5, readCommand="e")
+   comPzemCycler(energyModuleData5, latestNormal5, readCommand='e')
    for j in range (0,8):
     indicatorsGroup[3][j]=energyModuleData5[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
   if (statusArray10[5]==enabled and statusArray10[21]==disabled and statusBefore==enabled) or (statusArray10[5]==disabled and energyModuleData6[1]>0):
-   comPzemCycler(energyModuleData6, latestNormal6, readCommand="f")
+   comPzemCycler(energyModuleData6, latestNormal6, readCommand='f')
    for j in range (8,16):
     indicatorsGroup[3][j]=energyModuleData6[j-8] #indicators axes that belongs to general.... testing purpose
    indicatorsGroup[3][16]=round(indicatorsGroup[3][4]+indicatorsGroup[3][12],1) #Asign sum of energy
-   indicatorsGroup[3][17]=int(indicatorsGroup[3][16]*kWprice) #Asign paying bill value
+   indicatorsGroup[3][17]=int(indicatorsGroup[3][16]*kWpricel[3]) #Asign paying bill value
    indicatorsGroup[3][18]=round(indicatorsGroup[3][2]+indicatorsGroup[3][10],1) #Asign sum of instant power
+   indicatorsGroup[3][19]=round((indicatorsGroup[3][18]/1000)*kWpricel[3]) #Asign money for instant power
   #Block to read PZEM modules from Mini Local
   statusBefore=checkSerial()
   if (statusArray10[6]==enabled and statusArray10[22]==disabled and statusBefore==enabled) or (statusArray10[6]==disabled and energyModuleData7[1]>0):
-   comPzemCycler(energyModuleData7, latestNormal7, readCommand="g")
+   comPzemCycler(energyModuleData7, latestNormal7, readCommand='g')
    for j in range (0,8):
     indicatorsGroup[4][j]=energyModuleData7[j] #indicators axes that belongs to general.... testing purpose
   statusBefore=checkSerial()
   if (statusArray10[7]==enabled and statusArray10[23]==disabled and statusBefore==enabled) or (statusArray10[7]==disabled and energyModuleData8[1]>0):
-   comPzemCycler(energyModuleData8, latestNormal8, readCommand="h")
+   comPzemCycler(energyModuleData8, latestNormal8, readCommand='h')
    for j in range (8,16):
     indicatorsGroup[4][j]=energyModuleData8[j-8] #indicators axes that belongs to general.... testing purpose
    indicatorsGroup[4][16]=round(indicatorsGroup[4][4]+indicatorsGroup[4][12],1) #Asign sum of energy
-   indicatorsGroup[4][17]=int(indicatorsGroup[4][16]*kWpriceIntern) #Asign paying bill value
+   indicatorsGroup[4][17]=int(indicatorsGroup[4][16]*kWpricel[4]) #Asign paying bill value
    indicatorsGroup[4][18]=round(indicatorsGroup[4][2]+indicatorsGroup[4][10],1) #Asign sum of instant power
+   indicatorsGroup[4][19]=round((indicatorsGroup[4][18]/1000)*kWpricel[4]) #Asign money for instant power
 
 #------------Leave this block alone to retrieve PZEM A/C data testing purposes
   statusBefore=checkSerial()
   if (statusArray10[8]==enabled and statusArray10[24]==disabled and statusBefore==enabled) or (statusArray10[8]==disabled and energyModuleData50[1]>0):
-   comPzemCycler(energyModuleData50, latestNormal50, readCommand="y")
+   comPzemCycler(energyModuleData50, latestNormal50, readCommand='i')
    for j in range (32,40):
     indicatorsGroup[2][j]=energyModuleData50[j-32] #indicators axes that belongs to general.... testing purpose
-   indicatorsGroup[2][40]=int(indicatorsGroup[2][36]*kWpriceIntern) #Asign paying bill value   
+   indicatorsGroup[2][40]=int(indicatorsGroup[2][36]*kWpricel[4]) #Asign paying bill value
+   indicatorsGroup[2][42]=indicatorsGroup[2][41]-indicatorsGroup[2][40]
+   if indicatorsGroup[2][35]>1.4:
+    statusGroup[2][0]=enabled           #Mark enabled compressor A/C V1 operating status flag
+   else:
+    statusGroup[2][0]=disabled          
+   if indicatorsGroup[2][42]<moneyAcLimit:
+    statusGroup[2][1]=enabled           #In case consumption A/C V1 exceeds moneyAcLimit 
+   else:
+    statusGroup[2][1]=disabled    
   statusBefore=checkSerial()
   if (statusArray10[9]==enabled and statusArray10[25]==disabled and statusBefore==enabled) or (statusArray10[9]==disabled and energyModuleData51[1]>0):
-   comPzemCycler(energyModuleData51, latestNormal51, readCommand="z")
+   comPzemCycler(energyModuleData51, latestNormal51, readCommand='j')
    for j in range (32,40):                         #next must be j-32 or start of range
     indicatorsGroup[3][j]=energyModuleData51[j-32] #indicators axes that belongs to general.... testing purpose
-   indicatorsGroup[3][40]=int(indicatorsGroup[3][36]*kWpriceIntern) #Asign paying bill value   
+   indicatorsGroup[3][40]=int(indicatorsGroup[3][36]*kWpricel[4]) #Asign paying bill value
+   indicatorsGroup[3][42]=indicatorsGroup[3][41]-indicatorsGroup[3][40]
+   if indicatorsGroup[3][35]>1.4:
+    statusGroup[3][0]=enabled           #Mark enabled compressor A/C V2 operating status flag
+   else:
+    statusGroup[3][0]=disabled          #Mark disabled compressor A/C V2 operating status flag   
+   if indicatorsGroup[3][42]<moneyAcLimit:
+    statusGroup[3][1]=enabled           #In case consumption A/C V2 exceeds moneyAcLimit 
+   else:
+    statusGroup[3][1]=disabled
 #-------------END BLOCK
 
   #Block to read data from external sensors installed in arduino mega
   statusBefore=checkSerial()
   if statusArray10[30]==enabled and statusBefore==enabled:
-   comPzemCycler(sensorsModuleData9, latestNormal9, readCommand="i")
+   comPzemCycler(sensorsModuleData9, latestNormal9, readCommand='k')
    windSpeed=sensorsModuleData9[1] #Delete this as soon as test is finished
 #=======================================================================
   serialComQuality=round(((float(cleanData)/float(serialTransactions))*100),2)
@@ -466,13 +578,10 @@ while True:
   indicatorsGroup[0][1]=serialTransactions #Number of times serial queries executed in lines of while loop
   indicatorsGroup[0][2]=cleanData #Keep count of clean serial queries
   #Don't let this number get too high... it's stable and no need for that long
-  if serialTransactions>=100000:
+  if serialTransactions>=9000000:
    serialTransactions=0
    cleanData=0
    executionsFinished=0
-  indicatorsGroup[0][3]=0 #available --->basicSerialFailures #Keep counts of failures of basic serial int status query
-  indicatorsGroup[0][4]=0 #available --->byteArrayFailures #Keep counts of failures of bytes array query
-  indicatorsGroup[0][5]=0 #available --->stArrayComFailures #Detects communication failures when retrieving status array
   indicatorsGroup[0][6]=serialReboots #Keep counts of serial.open/serial.close
   indicatorsGroup[0][7]=serialComQuality #Serial communication performance
   indicatorsGroup[0][8]=outRangeFloats #Keep counts when out of range floats are received
@@ -482,27 +591,174 @@ while True:
   indicatorsGroup[0][12]=execTime
   indicatorsGroup[0][13]=0 #available-->incompleteByteArrayReception
   indicatorsGroup[0][14]=0 #available--->incompleteFloatsReception
-  indicatorsGroup[1][17]= round(indicatorsGroup[1][3]-indicatorsGroup[1][11],1) #Temp purpose for Delta I in mains 220V phase-N
+  indicatorsGroup[1][24]= round(indicatorsGroup[1][3]-indicatorsGroup[1][11],1) #Delta I in mains 220V phase-N
+  indicatorsGroup[2][24]= round(indicatorsGroup[2][3]-indicatorsGroup[2][11],1) #Delta I in apartment1 220V phase-N
+  indicatorsGroup[3][24]= round(indicatorsGroup[3][3]-indicatorsGroup[3][11],1) #Delta I in apartment2 220V phase-N
+  indicatorsGroup[4][24]= round(indicatorsGroup[4][3]-indicatorsGroup[4][11],1) #Delta I in smallBusiness 220V phase-N  
   statusGroup[0][0]=autoIncrementMark #This one will be used to keep track of sequential value from status array
   
   today = datetime.datetime.today() #Take a look for recent date and time value
   refDay=int(today.strftime("%d"))
   refHour=int(today.strftime("%H"))
   refMinute=int(today.strftime("%M"))
+  
+  
+#Block conditioned to schedule events  
+  schedule.run_pending()
+  if flagEachHour01:
+   for cycInd in range(1,len(kWpricel)):
+    alter1Now[cycInd]=round(indicatorsGroup[cycInd][4]+indicatorsGroup[cycInd][12],1)
+    if alter1Now[cycInd]<alter1Before[cycInd]:
+     indicatorsGroup[cycInd][20]=round((alter1Before[cycInd]-alter1Now[cycInd]),1)
+    else:
+     indicatorsGroup[cycInd][20]=round((alter1Now[cycInd]-alter1Before[cycInd]),1)
+    indicatorsGroup[cycInd][21]=int(indicatorsGroup[cycInd][20]*kWpricel[cycInd])
+    alter1Before[cycInd]=alter1Now[cycInd]
+   flagEachHour01=False
+  if flagEachDay01:
+   for cycInd in range(1,len(kWpricel)):
+    alter2Now[cycInd]=round(indicatorsGroup[cycInd][4]+indicatorsGroup[cycInd][12],1)
+    if alter2Now[cycInd]<alter2Before[cycInd]:
+     indicatorsGroup[cycInd][22]=round(alter2Before[cycInd]-alter2Now[cycInd],1)
+    else:
+     indicatorsGroup[cycInd][22]=round(alter2Now[cycInd]-alter2Before[cycInd],1)
+    indicatorsGroup[cycInd][23]=int(indicatorsGroup[cycInd][22]*kWpricel[cycInd])
+    alter2Before[cycInd]=alter2Now[cycInd]
+   flagEachDay01=False
+  if flagEachEndDay01:
+   f = open(today.strftime("/home/pi/pythons/Registros/%Y/%b/DatasetPerDay-%Y-%b.txt"), "a")    #Sacar el dia, el mes en letras y el año con la extensión ".txt"
+   f.write(str(today.strftime("%Y-%b-%d,")))#Descriptivo fecha y hora   
+   f.write(str(indicatorsGroup[1][4])+",") #Total Energía consumida PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][12])+",") #Total Energía consumida PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][17])+",") #Valor monetario del consumo de energía para main feed
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[2][4])+",") #Total Energía consumida PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][12])+",") #Total Energía consumida PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][17])+",") #Valor monetario del consumo de energía para apartment1
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[3][4])+",") #Total Energía consumida PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][12])+",") #Total Energía consumida PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][17])+",") #Valor monetario del consumo de energía para apartment2
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[4][4])+",") #Total Energía consumida PZEM Fase 1 color negro Seccion Mantenimiento   
+   f.write(str(indicatorsGroup[4][12])+",") #Total Energía consumida PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][17])+",") #Valor monetario del consumo de energía para Seccion Mantenimiento   
+   f.write(str(11072016)+"\n") #Guardar ultimo dato con salto de linea asegurando que es final de seccion
+   f.close() #Cerrar archivo
+   flagEachEndDay01=False
+  if flagEach5Minute01: #Execution block for everything that belongs to each 5 minutes
+   f = open(today.strftime("/home/pi/pythons/Registros/%Y/%b/%Y-%b-%d.txt"), "a")    #Sacar el dia, el mes en letras y el año con la extensión ".txt"
+   f.write(str(today.strftime("%Y-%b-%d, %H:%M,")))#Descriptivo fecha y hora
+   f.write(str(indicatorsGroup[1][1])+",") #Voltaje PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][2])+",") #Potencia instantána PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][3])+",") #Corriente instantánea PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][4])+",") #Total Energía consumida PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][5])+",") #Frecuencia instantánea PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][6])+",") #Factor de potencia PZEM Fase 1 color negro main feed
+   f.write(str(indicatorsGroup[1][9])+",") #Voltaje PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][10])+",") #Potencia instantána PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][11])+",") #Corriente instantánea PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][12])+",") #Total Energía consumida PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][13])+",") #Frecuencia instantánea PZEM Fase 2 color rojo main feed
+   f.write(str(indicatorsGroup[1][14])+",") #Factor de potencia PZEM Fase 2 color rojo main feed   
+   f.write(str(indicatorsGroup[1][16])+",") #Sumatoria de energía consumida en las dos fases para main feed
+   f.write(str(indicatorsGroup[1][17])+",") #Valor monetario del consumo de energía para main feed
+   f.write(str(indicatorsGroup[1][24])+",") #Delta I in mains 220V phase-N   
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[2][1])+",") #Voltaje PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][2])+",") #Potencia instantána PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][3])+",") #Corriente instantánea PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][4])+",") #Total Energía consumida PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][5])+",") #Frecuencia instantánea PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][6])+",") #Factor de potencia PZEM Fase 1 color negro apartment1
+   f.write(str(indicatorsGroup[2][9])+",") #Voltaje PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][10])+",") #Potencia instantána PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][11])+",") #Corriente instantánea PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][12])+",") #Total Energía consumida PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][13])+",") #Frecuencia instantánea PZEM Fase 2 color rojo apartment1
+   f.write(str(indicatorsGroup[2][14])+",") #Factor de potencia PZEM Fase 2 color rojo apartment1   
+   f.write(str(indicatorsGroup[2][16])+",") #Sumatoria de energía consumida en las dos fases para apartment1
+   f.write(str(indicatorsGroup[2][17])+",") #Valor monetario del consumo de energía para apartment1
+   f.write(str(indicatorsGroup[2][24])+",") #Delta I in apartment1 220V phase-N   
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[3][1])+",") #Voltaje PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][2])+",") #Potencia instantána PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][3])+",") #Corriente instantánea PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][4])+",") #Total Energía consumida PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][5])+",") #Frecuencia instantánea PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][6])+",") #Factor de potencia PZEM Fase 1 color negro apartment2
+   f.write(str(indicatorsGroup[3][9])+",") #Voltaje PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][10])+",") #Potencia instantána PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][11])+",") #Corriente instantánea PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][12])+",") #Total Energía consumida PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][13])+",") #Frecuencia instantánea PZEM Fase 2 color rojo apartment2
+   f.write(str(indicatorsGroup[3][14])+",") #Factor de potencia PZEM Fase 2 color rojo apartment2   
+   f.write(str(indicatorsGroup[3][16])+",") #Sumatoria de energía consumida en las dos fases para apartment2
+   f.write(str(indicatorsGroup[3][17])+",") #Valor monetario del consumo de energía para apartment2
+   f.write(str(indicatorsGroup[3][24])+",") #Delta I in apartment2 220V phase-N   
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[4][1])+",") #Voltaje PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][2])+",") #Potencia instantána PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][3])+",") #Corriente instantánea PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][4])+",") #Total Energía consumida PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][5])+",") #Frecuencia instantánea PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][6])+",") #Factor de potencia PZEM Fase 1 color negro Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][9])+",") #Voltaje PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][10])+",") #Potencia instantána PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][11])+",") #Corriente instantánea PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][12])+",") #Total Energía consumida PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][13])+",") #Frecuencia instantánea PZEM Fase 2 color rojo Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][14])+",") #Factor de potencia PZEM Fase 2 color rojo Seccion Mantenimiento   
+   f.write(str(indicatorsGroup[4][16])+",") #Sumatoria de energía consumida en las dos fases para Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][17])+",") #Valor monetario del consumo de energía para Seccion Mantenimiento
+   f.write(str(indicatorsGroup[4][24])+",") #Delta I in Seccion Mantenimiento 220V phase-N
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[2][35])+",") #Corriente instantánea PZEM A/C Apartamento 1
+   f.write(str(indicatorsGroup[2][36])+",") #Total Energía consumida PZEM A/C Apartamento 1
+   f.write(str(indicatorsGroup[2][41])+",") #Saldo de carga monteria A/C Apartamento 1
+   f.write(str(indicatorsGroup[2][42])+",") #Saldo restante monetario A/C Apartamento 1 statusGroup[2][0]
+   f.write(str(11072016)+",")               #Elemento separador de secciones
+   f.write(str(indicatorsGroup[3][35])+",") #Corriente instantánea PZEM A/C Apartamento 2
+   f.write(str(indicatorsGroup[3][36])+",") #Total Energía consumida PZEM A/C Apartamento 2
+   f.write(str(indicatorsGroup[3][41])+",") #Saldo de carga monteria A/C Apartamento 2
+   f.write(str(indicatorsGroup[3][42])+",") #Saldo restante monetario A/C Apartamento 2   
+   f.write(str(11072016)+"\n") #Guardar ultimo dato con salto de linea asegurando que es final de seccion
+   f.close() #Cerrar archivo
+   flagEach5Minute01=False
+  
+  #VA PARA ASEGURAMIENTO DE DATOS EN SCHEDULE POR CADA MINUTO
+  #KEEP THIS BLOCK OFF. In the meantime global reset will be made Manually  
   #Send if necesary during firs minute of month a general reset energy command
-  if refDay==1 and refHour==0 and refMinute==0 and statusArray10[28]==disabled:
-   cmdAndStatusFromRasp1[24]=enabled
+  if refDay==1 and refHour==0 and refMinute==0 and statusArray10[28]==disabled and countBackForReset==disabled:
+   indicatorsGroup[1][25]=indicatorsGroup[1][16] #Ensuring for showing up last month energy consumption main feed
+   indicatorsGroup[1][26]=indicatorsGroup[1][17] #Ensuring for showing up last month monetary energy consumption main feed
+   indicatorsGroup[2][25]=indicatorsGroup[2][16] #Ensuring for showing up last month energy consumption apartment1
+   indicatorsGroup[2][26]=indicatorsGroup[2][17] #Ensuring for showing up last month monetary energy consumption apartment1
+   indicatorsGroup[3][25]=indicatorsGroup[3][16] #Ensuring for showing up last month energy consumption apartment2
+   indicatorsGroup[3][26]=indicatorsGroup[3][17] #Ensuring for showing up last month monetary energy consumption apartment2
+   indicatorsGroup[4][25]=indicatorsGroup[4][16] #Ensuring for showing up last month energy consumption seccion Mantenimiento
+   indicatorsGroup[4][26]=indicatorsGroup[4][17] #Ensuring for showing up last month monetary energy consumption seccion Mantenimiento  
+   for zeroFillerPzem in range(8):
+    cmdAndStatusFromRasp1[zeroFillerPzem]=enabled #The idea is to mark each energy meter as requested to zero
+   countBackForReset=enabled
   #clear if necesary during second minute of month a general reset energy command
   if refDay==1 and refHour==0 and refMinute==1 and statusArray10[28]==enabled:
-   cmdAndStatusFromRasp1[24]=disabled
-  
+   for zeroFillerPzem in range(10):
+    cmdAndStatusFromRasp1[zeroFillerPzem]=disabled #Then after a minute clear flag order to zeroing
+   countBackForReset=disabled
+   
   if controlsGroup[0][0] == enabled:
-   comArdu.write('l'.encode())
-   time.sleep(3)
-   controlsGroup[0][0] = disabled
+    controlsGroup[0][0] = disabled
+    for globalFlagReset in range(8): 
+     cmdAndStatusFromRasp1[globalFlagReset]=enabled #Just a manual global reset using iteration VIA MQTT
   if controlsGroup[0][1] == enabled:
-   comArdu.write('m'.encode()) #Temp command to switch ON rain pump some minutes
+   #comArdu.write('m'.encode()) #Temp command to switch ON rain pump some minutes
    controlsGroup[0][1] = disabled
+  if controlsGroup[0][2] == enabled:
+   topicPath='ElectroMESH/general/status/01'
+   mqttc.publish(topicPath, str(enabled))
+   GPIO.cleanup()
+   quit()
 
 #MQTT publish launcher--------------------------------------
   for nodeCount in range(len(nodes)): #Whole publish MQTT
@@ -523,8 +779,9 @@ while True:
   GPIO.cleanup()
   quit()
  except serial.SerialException as e:
-  print("Serial port is unplugged... check connection")
   serialExceptionsDetected+=1
+  topicPath=topicPath='ElectroMESH/general/status/03'
+  mqttc.publish(topicPath, str(enabled))
   GPIO.cleanup()
   quit()
  except Exception as err:
